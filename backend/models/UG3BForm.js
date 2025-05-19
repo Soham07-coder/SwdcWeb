@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from "mongoose"; // ✅ Use ES module import
 
 const bankDetailsSchema = new mongoose.Schema({
   beneficiary: { type: String, required: true },

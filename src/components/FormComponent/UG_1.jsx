@@ -244,13 +244,13 @@ const UG1Form = () => {
       <div className="signatures">
         <div>
           <label>Signature of Group Leader (JPEG Only)</label>
-          <input type="file" accept="image/jpeg" name="groupLeaderSignature" onChange={(e) => handleFileUpload(e, "signature")} />
+          <input type="file" accept="image/jpeg" name="groupLeaderSignature" onChange={(e) => handleSignatureUpload(e, "groupLeader")} />
           {groupLeaderSignature && <p className="file-name">{groupLeaderSignature.name}</p>}
         </div>
 
         <div>
           <label>Signature of Guide (JPEG Only)</label>
-          <input type="file" accept="image/jpeg" name="guideSignature" onChange={(e) => handleFileUpload(e, "signature")} />
+          <input type="file" accept="image/jpeg" name="guideSignature" onChange={(e) => handleSignatureUpload(e, "guide")} />
           {guideSignature && <p className="file-name">{guideSignature.name}</p>}
         </div>
 

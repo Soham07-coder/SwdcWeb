@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from "axios";
 
 const PG_1 = () => {
   const [formData, setFormData] = useState({
@@ -49,12 +50,44 @@ const PG_1 = () => {
   };
 
   const handleFileChange = (field, e) => {
-    setFiles({
-      ...files,
+    setFiles(prevFiles => ({
+      ...prevFiles,
       [field]: e.target.files[0]
-    });
+    }));
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+  
+    try {
+      const formPayload = new FormData();
+  
+      // Append all non-bankDetails fields
+      Object.entries(formData).forEach(([key, value]) => {
+        if (key !== "bankDetails") {
+          formPayload.append(key, value);
+        }
+      });
+  
+      // Append bankDetails JSON string
+      formPayload.append("bankDetails", JSON.stringify(formData.bankDetails));
+  
+      // Append files
+      if (files.receiptCopy) formPayload.append("receiptCopy", files.receiptCopy);
+      if (files.additionalDocuments) formPayload.append("additionalDocuments", files.additionalDocuments);
+      if (files.guideSignature) formPayload.append("guideSignature", files.guideSignature);
+  
+      const response = await axios.post(
+        "http://localhost:5000/api/pg1form/submit",
+        formPayload
+      );
+  
+      alert("Form submitted successfully!");
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      alert("Failed to submit form. Please try again.");
+    }
+  };
   return (
     <div className="form-container max-w-4xl mx-auto p-5 bg-gray-50 rounded-lg shadow-md">
       <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Post Graduate Form 1 - Workshop/STTP</h1>
@@ -412,10 +445,10 @@ const PG_1 = () => {
 
         {/* Form Actions */}
         <div className="flex justify-between">
-          <button className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
+          <button onClick={() => window.history.back()} className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
             Back
           </button>
-          <button className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+          <button onClick={handleSubmit} className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
             Submit
           </button>
         </div>

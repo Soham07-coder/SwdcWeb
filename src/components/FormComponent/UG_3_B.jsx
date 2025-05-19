@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import axios from 'axios';
 
 const UG_3_B = () => {
   const [formData, setFormData] = useState({
@@ -56,10 +57,50 @@ const UG_3_B = () => {
   };
 
   const handleFileChange = (field, e) => {
-    setFiles({
-      ...files,
-      [field]: e.target.files[0]
-    });
+    const file = e.target.files[0];
+    if (file && file.size > 5 * 1024 * 1024) {
+      alert("File size must be under 5MB");
+      return;
+    }
+    setFiles(prev => ({ ...prev, [field]: file }));
+  };
+
+  const handleSubmit = async () => {
+    const submitData = new FormData();
+  
+    // Append form data
+    for (const key in formData) {
+      if (key === 'authors') {
+        formData.authors.forEach((author, index) => {
+          submitData.append(`authors[${index}]`, author);
+        });
+      } else if (key === 'bankDetails') {
+        // Send bankDetails as a stringified JSON object
+        submitData.append('bankDetails', JSON.stringify(formData.bankDetails));
+      } else {
+        submitData.append(key, formData[key]);
+      }
+    }
+  
+    // Append files
+    for (const fileKey in files) {
+      if (files[fileKey]) {
+        submitData.append(fileKey, files[fileKey]);
+      }
+    }
+  
+    try {
+      const response = await axios.post('http://localhost:5000/api/ug3bform/submit', submitData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      alert('Form submitted successfully!');
+      console.log(response.data);
+    } catch (error) {
+      console.error('Form submission failed:', error);
+      alert('Submission failed. Please try again.');
+    }
   };
 
   return (
@@ -453,10 +494,10 @@ const UG_3_B = () => {
 
         {/* Form Actions */}
         <div className="flex justify-between">
-          <button className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
+          <button onClick={() => window.history.back()} className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
             Back
           </button>
-          <button className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+          <button onClick={handleSubmit} className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
             Submit
           </button>
         </div>

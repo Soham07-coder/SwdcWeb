@@ -36,12 +36,8 @@ const upload = multer({ storage });
 // 📌 **Submit Form Data (Without File)**
 router.post("/saveFormData", async (req, res) => {
   try {
-    console.log("📩 **Form Submission Received**:", JSON.stringify(req.body, null, 2));
-
     const newForm = new UGForm2(req.body);
     const savedForm = await newForm.save();
-
-    console.log("✅ Form saved successfully with ID:", savedForm._id);
     res.status(201).json({ message: "Form data saved successfully", formId: savedForm._id });
   } catch (error) {
     console.error("❌ Error saving form data:", error);
@@ -53,9 +49,6 @@ router.post("/saveFormData", async (req, res) => {
 router.post("/uploadPDF/:formId", upload.single("pdfFile"), async (req, res) => {
   try {
     const formId = req.params.formId;
-    console.log("🟢 Form ID:", formId);
-    console.log("📂 File received:", req.file);
-
     if (!req.file) {
       console.log("❌ No file uploaded!");
       return res.status(400).json({ message: "No file uploaded" });
@@ -80,8 +73,6 @@ router.post("/uploadPDF/:formId", upload.single("pdfFile"), async (req, res) => 
       console.log("❌ Form not found!");
       return res.status(404).json({ message: "Form not found" });
     }
-
-    console.log("✅ PDF linked successfully:", updatedForm);
     res.status(200).json({ message: "PDF uploaded successfully!", form: updatedForm });
   } catch (error) {
     console.error("❌ Upload error:", error);
@@ -89,75 +80,75 @@ router.post("/uploadPDF/:formId", upload.single("pdfFile"), async (req, res) => 
   }
 });
 
-// 📌 3️⃣ **Fetch All Forms**
-router.get("/get-all", async (req, res) => {
-  try {
-    console.log("🟢 Fetching all forms...");
-    const forms = await UGForm2.find();
-    res.status(200).json(forms);
-  } catch (error) {
-    console.error("❌ Fetch Error:", error);
-    res.status(500).json({ error: "Error fetching forms" });
-  }
-});
+// // 📌 3️⃣ **Fetch All Forms**
+// router.get("/get-all", async (req, res) => {
+//   try {
+//     console.log("🟢 Fetching all forms...");
+//     const forms = await UGForm2.find();
+//     res.status(200).json(forms);
+//   } catch (error) {
+//     console.error("❌ Fetch Error:", error);
+//     res.status(500).json({ error: "Error fetching forms" });
+//   }
+// });
 
-// 📌 4️⃣ **Fetch a Single Form by ID**
-router.get("/get/:id", async (req, res) => {
-  try {
-    console.log(`🟢 Fetching form with ID: ${req.params.id}`);
-    const form = await UGForm2.findById(req.params.id);
-    if (!form) return res.status(404).json({ error: "Form not found" });
+// // 📌 4️⃣ **Fetch a Single Form by ID**
+// router.get("/get/:id", async (req, res) => {
+//   try {
+//     console.log(`🟢 Fetching form with ID: ${req.params.id}`);
+//     const form = await UGForm2.findById(req.params.id);
+//     if (!form) return res.status(404).json({ error: "Form not found" });
 
-    res.status(200).json(form);
-  } catch (error) {
-    console.error("❌ Fetch Error:", error);
-    res.status(500).json({ error: "Error fetching form" });
-  }
-});
+//     res.status(200).json(form);
+//   } catch (error) {
+//     console.error("❌ Fetch Error:", error);
+//     res.status(500).json({ error: "Error fetching form" });
+//   }
+// });
 
-// 📌 5️⃣ **Fetch PDF by File ID**
-router.get("/file/:id", async (req, res) => {
-  try {
-    console.log(`🟢 Fetching file with ID: ${req.params.id}`);
-    const fileId = new mongoose.Types.ObjectId(req.params.id);
+// // 📌 5️⃣ **Fetch PDF by File ID**
+// router.get("/file/:id", async (req, res) => {
+//   try {
+//     console.log(`🟢 Fetching file with ID: ${req.params.id}`);
+//     const fileId = new mongoose.Types.ObjectId(req.params.id);
 
-    gfs.find({ _id: fileId }).toArray((err, files) => {
-      if (err || !files.length) {
-        return res.status(404).json({ error: "File not found" });
-      }
-      console.log("✅ File found, streaming...");
-      gfs.openDownloadStream(fileId).pipe(res);
-    });
-  } catch (error) {
-    console.error("❌ File Fetch Error:", error);
-    res.status(500).json({ error: "Error fetching file" });
-  }
-});
+//     gfs.find({ _id: fileId }).toArray((err, files) => {
+//       if (err || !files.length) {
+//         return res.status(404).json({ error: "File not found" });
+//       }
+//       console.log("✅ File found, streaming...");
+//       gfs.openDownloadStream(fileId).pipe(res);
+//     });
+//   } catch (error) {
+//     console.error("❌ File Fetch Error:", error);
+//     res.status(500).json({ error: "Error fetching file" });
+//   }
+// });
 
-// 📌 6️⃣ **Delete Form & PDF**
-router.delete("/delete/:id", async (req, res) => {
-  try {
-    console.log(`🟢 Deleting form with ID: ${req.params.id}`);
-    const form = await UGForm2.findById(req.params.id);
-    if (!form) return res.status(404).json({ error: "Form not found" });
+// // 📌 6️⃣ **Delete Form & PDF**
+// router.delete("/delete/:id", async (req, res) => {
+//   try {
+//     console.log(`🟢 Deleting form with ID: ${req.params.id}`);
+//     const form = await UGForm2.findById(req.params.id);
+//     if (!form) return res.status(404).json({ error: "Form not found" });
 
-    if (form.pdfFileId) {
-      const fileId = new mongoose.Types.ObjectId(form.pdfFileId);
-      gfs.find({ _id: fileId }).toArray((err, files) => {
-        if (files.length) {
-          gfs.delete(fileId);
-          console.log(`✅ PDF deleted: ${fileId}`);
-        }
-      });
-    }
+//     if (form.pdfFileId) {
+//       const fileId = new mongoose.Types.ObjectId(form.pdfFileId);
+//       gfs.find({ _id: fileId }).toArray((err, files) => {
+//         if (files.length) {
+//           gfs.delete(fileId);
+//           console.log(`✅ PDF deleted: ${fileId}`);
+//         }
+//       });
+//     }
 
-    await UGForm2.findByIdAndDelete(req.params.id);
-    console.log("✅ Form deleted successfully!");
-    res.status(200).json({ message: "Form deleted successfully!" });
-  } catch (error) {
-    console.error("❌ Delete Error:", error);
-    res.status(500).json({ error: "Error deleting form" });
-  }
-});
+//     await UGForm2.findByIdAndDelete(req.params.id);
+//     console.log("✅ Form deleted successfully!");
+//     res.status(200).json({ message: "Form deleted successfully!" });
+//   } catch (error) {
+//     console.error("❌ Delete Error:", error);
+//     res.status(500).json({ error: "Error deleting form" });
+//   }
+// });
 
 export default router;
