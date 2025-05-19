@@ -1,0 +1,153 @@
+/* General Container */
+.form-container {
+    background: #ffffff;
+    padding: 20px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 750px; /* Increased width for better alignment */
+    margin: auto;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh; /* Ensure the form takes full height */
+  }
+  
+  /* Heading */
+  h2 {
+    text-align: center;
+    color: #333;
+    font-size: 24px;
+  }
+  
+  .form-category {
+    text-align: center;
+    color: #666;
+    font-size: 16px;
+    margin-bottom: 20px;
+  }
+  
+  /* Labels */
+  label {
+    display: block;
+    font-weight: bold;
+    margin: 10px 0 5px;
+    color: #444;
+  }
+  
+  /* Input Fields */
+  input, textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 14px;
+  }
+  
+  textarea {
+    resize: vertical;
+    height: 80px;
+  }
+  
+  /* Checkbox */
+  .checkbox-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+  }
+  
+  /* Guide Details */
+  .guide-details {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+  }
+  
+  .guide-details input {
+    flex: 1;
+  }
+  
+  /* Student Table */
+  .student-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 15px;
+  }
+  
+  .student-table th, .student-table td {
+    border: 1px solid #ddd;
+    padding: 10px;
+    text-align: center;
+  }
+  
+  .student-table th {
+    background: #f4f4f4;
+    font-weight: bold;
+  }
+  
+  /* Signatures */
+  .signatures {
+    display: flex;
+    justify-content: space-between;
+    margin: 20px 0;
+  }
+  
+  .signature-btn {
+    padding: 10px 15px;
+    background: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 14px;
+  }
+  
+  .signature-btn:hover {
+    background: #0056b3;
+  }
+  
+  /* File Upload */
+  .file-input {
+    display: block;
+    margin-top: 10px;
+  }
+  
+  .file-name {
+    font-size: 14px;
+    color: green;
+    margin-top: 5px;
+  }
+  
+  /* Buttons */
+  .form-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+  
+  .back-btn, .submit-btn {
+    padding: 12px 18px;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+    font-size: 14px;
+  }
+  
+  .back-btn {
+    background: #d9534f;
+    color: white;
+  }
+  
+  .back-btn:hover {
+    background: #c9302c;
+  }
+  
+  .submit-btn {
+    background: #5cb85c;
+    color: white;
+  }
+  
+  .submit-btn:hover {
+    background: #4cae4c;
+  }
+  

@@ -1,0 +1,97 @@
+.form-container {
+    max-width: 800px;
+    margin: auto;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  h2 {
+    text-align: center;
+    color: #333;
+  }
+  
+  label {
+    font-weight: bold;
+    display: block;
+    margin: 10px 0 5px;
+  }
+  
+  input, textarea {
+    width: 100%; /* Ensures it fits within the table cell */
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box; /* Ensures padding doesn't increase width */
+  }
+
+  textarea {
+    height: 60px;
+    resize: vertical; /* Allow resizing but keep within bounds */
+    overflow: hidden;
+  }
+  
+  /* Table styling */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  
+  th, td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    vertical-align: middle; /* Aligns content in the middle */
+  }
+  
+  /* Make inputs fit within table cells */
+  td input, td textarea {
+    width: 98%; /* Slightly less than 100% to avoid touching borders */
+    margin: 0;
+  }
+
+  
+  th {
+    background: #eee;
+  }
+  
+  .add-btn {
+    display: block;
+    width: fit-content;
+    padding: 6px 12px;
+    margin: 10px auto;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .add-btn:hover {
+    background: #0056b3;
+  }
+  
+  .back-btn, .submit-btn {
+    width: 48%;
+    padding: 10px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  
+  .submit-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+  }
+  
+  .back-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+  }
+  
+  .submit-btn:hover { background: #218838; }
+  .back-btn:hover { background: #c82333; }
+  

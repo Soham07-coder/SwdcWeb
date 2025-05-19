@@ -1,0 +1,23 @@
+.somaiyaLoginButton {
+  width: 380px;
+  height: 61px;
+  background-color: #fff;
+  border-radius: 40px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border: none;
+  cursor: pointer;
+}
+
+.buttonIcon {
+  width: 32px;
+  height: 35px;
+  border-radius: 35px;
+}
+
+.buttonText {
+  color: #000;
+  font: 24px 'Fira Sans', sans-serif;
+}
