@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 
 const PG_2_A = () => {
   const [formData, setFormData] = useState({
     organizingInstitute: '',
     projectTitle: '',
+    teamName: '',
+    guideName: '',
+    department: '',
+    date: '',
+    hodRemarks: '',
     studentDetails: [{
       name: '',
       class: '',
@@ -29,7 +35,7 @@ const PG_2_A = () => {
     comments: '',
     finalAmount: ''
   });
-
+  
   const [files, setFiles] = useState({
     bills: [],
     studentSignature: null,
@@ -91,6 +97,61 @@ const PG_2_A = () => {
     }));
   };
 
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+  
+    try {
+      const formPayload = new FormData();
+  
+      // Append string fields
+      formPayload.append("projectTitle", formData.projectTitle);
+      formPayload.append("teamName", formData.teamName);
+      formPayload.append("guideName", formData.guideName);
+      formPayload.append("department", formData.department);
+      formPayload.append("date", formData.date);
+      formPayload.append("hodRemarks", formData.hodRemarks);
+      formPayload.append("organizingInstitute", formData.organizingInstitute);
+      formPayload.append("amountClaimed", formData.amountClaimed);
+  
+      // Append complex fields as JSON strings
+      formPayload.append("bankDetails", JSON.stringify(formData.bankDetails));
+      formPayload.append("studentDetails", JSON.stringify(formData.studentDetails));
+      formPayload.append("expenses", JSON.stringify(formData.expenses));
+  
+      // Append files
+      files.bills.forEach((file) => {
+        formPayload.append("bills", file);
+      });
+  
+      if (files.studentSignature) {
+        formPayload.append("studentSignature", files.studentSignature);
+      }
+  
+      if (files.guideSignature) {
+        formPayload.append("guideSignature", files.guideSignature);
+      }
+  
+      if (files.hodSignature) {
+        formPayload.append("hodSignature", files.hodSignature);
+      }
+  
+      const response = await axios.post(
+        "http://localhost:5000/api/pg2aform/submit",
+        formPayload,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+  
+      alert("PG2A Form submitted successfully!");
+    } catch (error) {
+      console.error("Error submitting PG2A form:", error);
+      alert("Failed to submit PG2A form. Please try again.");
+    }
+  };
+
   return (
     <div className="form-container max-w-4xl mx-auto p-5 bg-gray-50 rounded-lg shadow-md">
       <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Post Graduate Form 2A - Project Competition</h1>
@@ -117,6 +178,42 @@ const PG_2_A = () => {
             type="text"
             name="projectTitle"
             value={formData.projectTitle}
+            onChange={handleChange}
+            className="w-full p-2 border border-gray-300 rounded"
+          />
+        </div>
+
+        {/* Team Name */}
+        <div className="mb-6">
+          <label className="block font-semibold mb-2">Team Name:</label>
+          <input
+            type="text"
+            name="teamName"
+            value={formData.teamName}
+            onChange={handleChange}
+            className="w-full p-2 border border-gray-300 rounded"
+          />
+        </div>
+
+        {/* Guide Name */}
+        <div className="mb-6">
+          <label className="block font-semibold mb-2">Guide Name:</label>
+          <input
+            type="text"
+            name="guideName"
+            value={formData.guideName}
+            onChange={handleChange}
+            className="w-full p-2 border border-gray-300 rounded"
+          />
+        </div>
+
+        {/* Department */}
+        <div className="mb-6">
+          <label className="block font-semibold mb-2">Department:</label>
+          <input
+            type="text"
+            name="department"
+            value={formData.department}
             onChange={handleChange}
             className="w-full p-2 border border-gray-300 rounded"
           />
@@ -395,15 +492,17 @@ const PG_2_A = () => {
             <label className="block font-semibold mb-2">Date:</label>
             <input
               type="date"
+              value={formData.date}
+              onChange={handleChange}
               className="w-full p-1 border border-gray-300 rounded"
             />
           </div>
 
           <div className="mb-4">
             <label className="block font-semibold mb-2">Remarks by HOD:</label>
-            <textarea
-              className="w-full p-2 border border-gray-300 rounded h-20"
-            ></textarea>
+            <textarea name="hodRemarks"
+              value={formData.hodRemarks}
+              onChange={handleChange} className="w-full p-2 border border-gray-300 rounded h-20"></textarea>
           </div>
 
           <div className="mb-4">
@@ -480,15 +579,12 @@ const PG_2_A = () => {
             </tr>
           </tbody>
         </table>
-
-        
-
         {/* Form Actions */}
         <div className="flex justify-between">
           <button className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
             Back
           </button>
-          <button className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
+          <button onClick={handleSubmit} className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
             Submit
           </button>
         </div>

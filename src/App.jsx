@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 //import facHome from "./pages/facHome";
+import PendingApplications from "./pages/PendingApplication";
+import ApplicationDetails from "./pages/ApplicationDetails";
 import UG_1 from "./components/FormComponent/UG_1";
 import UG_2 from "./components/FormComponent/UG_2";
 import UG_3_A from "./components/FormComponent/UG_3_A";
@@ -34,6 +36,8 @@ const App = () => {
         <Route path="/policy" element={<Policy />} />
         <Route path="/faqs" element={<FAQ />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/pending-applications" element={<PendingApplications />} />
+        <Route path="/application/:id" element={<ApplicationDetails />} />
         </Routes>
     </Router>
   );
