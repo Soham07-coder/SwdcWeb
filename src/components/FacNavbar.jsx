@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import "../style.css";
 import somaiyaLogo from "../assets/somaiya-logo.png";
 
-const Navbar = () => {
+const FacNavbar = () => {
   const user = JSON.parse(localStorage.getItem("user"));
 
   return (
@@ -13,8 +13,8 @@ const Navbar = () => {
       </div>
 
       <div className="navbar-center">
-        <Link to="/home" className="nav-link">Home</Link>
-        <Link to="/dashboard" className="nav-link">Dashboard</Link>
+        <Link to="/fac/home" className="nav-link">Home</Link>
+        <Link to="/fac/dashboard" className="nav-link">Dashboard</Link>
         <Link to="/policy" className="nav-link">Policy</Link>
         <Link
           to="/"
@@ -33,4 +33,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar;
+export default FacNavbar;

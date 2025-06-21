@@ -9,7 +9,9 @@ const Sidebar = () => {
       {/* Logo Section */}
       <div className="logo-container">
         <div className="logo-box">
-          <h2>Applicant <br /> Portal</h2>
+          <h2>
+            Applicant <br /> Portal
+          </h2>
           <p>Somaiya Vidyavihar University</p>
         </div>
       </div>
@@ -21,18 +23,20 @@ const Sidebar = () => {
         {/* Application Status Section */}
         <div className="status-section">
           <p>Application Status</p>
+
           <div className="status-item">
-            <FaClock className="status-icon" />{" "}
-            {/* Link to Pending Applications */}
-            <Link to="/pending-applications" className="sidebar-link">
-              Pending
-            </Link>
+            <FaClock className="status-icon" />
+            <Link to="/application/pending" className="sidebar-link">Pending</Link>
           </div>
+
           <div className="status-item">
-            <FaCheckCircle className="status-icon" /> Accepted
+            <FaCheckCircle className="status-icon" />
+            <Link to="/application/accepted" className="sidebar-link">Accepted</Link>
           </div>
+
           <div className="status-item">
-            <FaTimesCircle className="status-icon" /> Rejected
+            <FaTimesCircle className="status-icon" />
+            <Link to="/application/rejected" className="sidebar-link">Rejected</Link>
           </div>
         </div>
 

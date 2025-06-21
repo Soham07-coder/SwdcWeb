@@ -17,8 +17,6 @@ const forms = [
 
 const Home = () => {
   const navigate = useNavigate();
-
-
   return (
     <>
     <Navbar /> 

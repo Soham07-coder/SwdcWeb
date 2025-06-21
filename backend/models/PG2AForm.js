@@ -24,29 +24,40 @@ const bankDetailsSchema = new mongoose.Schema({
 });
 
 const pg2aFormSchema = new mongoose.Schema({
+  svvNetId: { type: String, required: true },
   organizingInstitute: { type: String, required: true },
   projectTitle: { type: String, required: true },
-
+  teamName: { type: String, required: false },
+  guideName: { type: String, required: false },
+  department: { type: String, required: false },
   studentDetails: { type: [studentDetailSchema], required: true },
   expenses: { type: [expenseSchema], required: true },
 
   bankDetails: { type: bankDetailsSchema, required: true },
-
-  amountClaimed: { type: Number, required: true },
-  amountRecommended: { type: Number },
-  comments: { type: String },
-  finalAmount: { type: Number },
-
   remarks: { type: String },
   date: { type: Date },
 
   files: {
-    bills: [{ type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true }],
+    bills: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files' }],
+      required: true,
+      validate: [arr => arr.length <= 5, '{PATH} exceeds the limit of 5'],
+    },
+    zips: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files' }],
+      default: [],
+      validate: [arr => arr.length <= 2, '{PATH} exceeds the limit of 2'],
+    },
     studentSignature: { type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true },
     guideSignature: { type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true },
-    hodSignature: { type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true },
   },
 
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected', 'under Review'],
+    default: 'pending',
+  },
+  remarks: { type: String },
   createdAt: { type: Date, default: Date.now },
 });
 

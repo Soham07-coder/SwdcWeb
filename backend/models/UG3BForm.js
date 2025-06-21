@@ -1,4 +1,11 @@
-import mongoose from "mongoose"; // ✅ Use ES module import
+import mongoose from "mongoose";
+
+const fileInfoSchema = new mongoose.Schema({
+  filename: String,
+  originalname: String,
+  mimetype: String,
+  size: Number
+}, { _id: false });
 
 const bankDetailsSchema = new mongoose.Schema({
   beneficiary: { type: String, required: true },
@@ -10,6 +17,7 @@ const bankDetailsSchema = new mongoose.Schema({
 }, { _id: false });
 
 const UG3BFormSchema = new mongoose.Schema({
+  svvNetId: { type: String, required: true },
   studentName: { type: String, required: true },
   yearOfAdmission: { type: String, required: true },
   feesPaid: { type: String, enum: ['Yes', 'No'], required: true },
@@ -28,34 +36,41 @@ const UG3BFormSchema = new mongoose.Schema({
   amountReceived: { type: String },
   amountSanctioned: { type: String },
 
-  // Files - store file info (filename, path, or GridFS id)
-  paperCopy: {
-    filename: String,
-    originalname: String,
-    mimetype: String,
-    size: Number
-  },
-  groupLeaderSignature: {
-    filename: String,
-    originalname: String,
-    mimetype: String,
-    size: Number
-  },
-  additionalDocuments: {
-    filename: String,
-    originalname: String,
-    mimetype: String,
-    size: Number
-  },
-  guideSignature: {
-    filename: String,
-    originalname: String,
-    mimetype: String,
-    size: Number
+  // Single files
+  paperCopy: fileInfoSchema,
+  groupLeaderSignature: fileInfoSchema,
+  additionalDocuments: fileInfoSchema,
+  guideSignature: fileInfoSchema,
+
+  // Multiple PDFs (max 5)
+  pdfDocuments: {
+    type: [fileInfoSchema],
+    validate: [arrayLimitPDF, '{PATH} exceeds the limit of 5']
   },
 
+  // Multiple ZIPs (max 2)
+  zipFiles: {
+    type: [fileInfoSchema],
+    validate: [arrayLimitZIP, '{PATH} exceeds the limit of 2']
+  },
+
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending',
+  },
+  remarks: { type: String },
 }, { timestamps: true });
+
+// Custom validators
+function arrayLimitPDF(val) {
+  return val.length <= 5;
+}
+
+function arrayLimitZIP(val) {
+  return val.length <= 2;
+}
 
 const UG3BForm = mongoose.model("UG3BForm", UG3BFormSchema);
 
-export default UG3BForm; // ✅ Use ES module export
+export default UG3BForm;
