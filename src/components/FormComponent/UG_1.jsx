@@ -1,7 +1,93 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
-import "../styles/UG1.css"; // Ensure this path is correct
+import "../styles/UG1.css"; // Removed this import due to compilation error
 import JSZip from "jszip";
+import Modal from './Modal';
+
+// FilePreview Component (moved inside the same file for simplicity, or can be a separate file)
+const FilePreview = ({ fileList, onRemove, fieldName, viewOnly, isStudent , onViewFile }) => {
+  // console.log(`FilePreview for ${fieldName}:`, { fileList, viewOnly, isStudent }); // Keep for debugging if needed
+  // No longer returning null directly here for 'uploadedFiles' as the parent will handle it.
+  // This component will now only focus on rendering the list if it's supposed to be visible.
+  // Determine if we should show the remove button
+  const showRemoveButton = !viewOnly;
+
+  // Filter out files that shouldn't be displayed (e.g., null, undefined, or empty objects)
+  const filteredFiles = fileList.filter(fileInfo => {
+    // Ensure fileInfo exists and has at least one of the expected properties for a file
+    return fileInfo && (fileInfo.url || fileInfo.fileId || fileInfo.id || (fileInfo.file instanceof File));
+  });
+
+  if (filteredFiles.length === 0) {
+    // Customize this message based on the fieldName if needed
+    // For uploadedFiles, give a specific message if no files are selected/uploaded
+    if (fieldName === 'uploadedFiles') {
+      return <p className="text-gray-500 text-sm italic mt-1">{viewOnly ? "No supporting documents uploaded." : "No documents selected yet."}</p>;
+    }
+    return <p className="text-gray-500 text-sm italic mt-1">No file selected.</p>;
+  }
+
+  return (
+    <ul className="mt-2 list-disc list-inside space-y-1">
+      {filteredFiles.map((fileInfo, index) => {
+        const isUploadedFile = !!(fileInfo.url || fileInfo.fileId || fileInfo.id);
+        const displayUrl = fileInfo.url ||
+                           (fileInfo.fileId ? `/api/ug1form/file/${fileInfo.fileId}` : null) ||
+                           (fileInfo.id ? `/api/ug1form/file/${fileInfo.id}` : null);
+
+        const fileName = fileInfo.name || (fileInfo.filename || (fileInfo.file ? fileInfo.file.name : 'Unnamed File'));
+        const fileSizeMB = fileInfo.file ? (fileInfo.file.size / (1024 * 1024)).toFixed(2) : (fileInfo.size ? (fileInfo.size / (1024 * 1024)).toFixed(2) : 'N/A');
+
+        let linkText;
+        if (viewOnly && isUploadedFile) {
+          // Display custom view text based on fieldName
+          switch (fieldName) {
+            case 'groupLeaderSignature':
+              linkText = "View Group Leader Signature";
+              break;
+            case 'guideSignature':
+              linkText = "View Guide Signature";
+              break;
+            case 'uploadedFiles':
+              linkText = `View Document ${index + 1}`; // For general uploaded documents
+              break;
+            default:
+              linkText = "View File";
+          }
+        } else {
+          // Show filename and size when NOT viewOnly or file not uploaded yet
+          linkText = `${fileName} (${fileSizeMB} MB)`;
+        }
+
+        return (
+          <li key={fileInfo._id || fileInfo.id || index} className="flex items-center justify-between text-sm text-gray-700 p-1 border rounded bg-gray-50 mb-1">
+            {viewOnly && isUploadedFile ? (
+              <button
+                type="button"
+                className="text-blue-600 hover:underline flex-grow text-left"
+                onClick={() => onViewFile(displayUrl, linkText)}
+              >
+                {linkText}
+              </button>
+            ) : (
+              <span className="flex-grow">{linkText}</span>
+            )}
+
+            {showRemoveButton && (
+              <button
+                type="button"
+                className="ml-4 text-red-600 hover:underline"
+                onClick={() => onRemove(fieldName, index)} // Pass fieldName and index
+              >
+                Remove
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
 
 const UG1Form = ({ data = null, viewOnly = false }) => {
   // Initial form data structure
@@ -20,53 +106,65 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
       rollNumber: "",
     }),
     status: "pending",
+    uploadedFiles: [], // New: Unified array for all documents
+    errors: {}, // New: For granular error messages
   };
 
-  const [formData, setFormData] = useState(
-    data
-      ? {
-          projectTitle: data.projectTitle || "",
-          projectUtility: data.projectUtility || "",
-          projectDescription: data.projectDescription || "",
-          finance: data.finance || "",
-          guideNames: data.guideNames || [""],
-          employeeCodes: data.employeeCodes || [""],
-          svvNetId: data.svvNetId || "",
-          studentDetails: data.studentDetails || initialFormData.studentDetails,
-          status: data.status || "pending",
-        }
-      : initialFormData
-  );
-
-  // State for PDFs and signatures
-  // Assumes backend sends file details in the corrected structure
-  const [pdfFiles, setPdfFiles] = useState(data?.pdfFiles || []); // Array of {id, name, url} or File objects
-  const [zipFile, setZipFile] = useState(data?.zipFileDetails || null); // {id, name, url} or File object or null
-  const [groupLeaderSignature, setGroupLeaderSignature] = useState(data?.groupLeaderSignature || null); // {id, name, url} or File object or null
-  const [guideSignature, setGuideSignature] = useState(data?.guideSignature || null); // {id, name, url} or File object or null
-
-  const [errorMessage, setErrorMessage] = useState("");
-  const [formId, setFormId] = useState(data?._id || null);
+  const [formData, setFormData] = useState(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [formId, setFormId] = useState(null);
+
+  // State for signatures, now structured as objects for FilePreview
+  const [groupLeaderSignature, setGroupLeaderSignature] = useState(null);
+  const [guideSignature, setGuideSignature] = useState(null);
+
+  // Refs to store original signature data from backend for comparison/display
+  const originalGroupLeaderSignatureRef = useRef(null);
+  const originalGuideSignatureRef = useRef(null);
+
   const fileInputRef = useRef(null);
-  const svvNetIdRef = useRef(""); // Stores svvNetId from localStorage
 
-  // Refs to store original data file info (now storing the full objects or null)
-  const originalPdfFilesRef = useRef(data?.pdfFiles || []);
-  const originalZipFileRef = useRef(data?.zipFileDetails || null);
-  const originalGroupLeaderSignatureRef = useRef(data?.groupLeaderSignature || null);
-  const originalGuideSignatureRef = useRef(data?.guideSignature || null);
+  // Determine user role and if student
+  const [currentUserRole, setCurrentUserRole] = useState("");
+  const isStudent = currentUserRole.toLowerCase() === "student";
+ // States for document viewing modal
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [docModalUrl, setDocModalUrl] = useState('');
+  const [docModalTitle, setDocModalTitle] = useState('');
 
+  // Function to open the document viewing modal
+  const handleViewDocument = (url, title) => {
+    setDocModalUrl(url);
+    setDocModalTitle(title);
+    setIsDocModalOpen(true);
+  };
+
+  // Function to close the document viewing modal
+  const handleCloseDocumentModal = () => {
+    setIsDocModalOpen(false);
+    setDocModalUrl('');
+    setDocModalTitle('');
+  };
+  // Effect to load user role from localStorage
   useEffect(() => {
-    const storedSvvNetId = localStorage.getItem("svvNetId");
-    if (storedSvvNetId) {
-      svvNetIdRef.current = storedSvvNetId;
-      if (!data) { // Only set in formData if it's a new form
-        setFormData((prev) => ({ ...prev, svvNetId: storedSvvNetId }));
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      if (parsedUser.role) {
+        setCurrentUserRole(parsedUser.role);
       }
     }
-  }, [data]); // Rerun if `data` changes (e.g. from null to populated)
+  }, []);
 
+  useEffect(() => {
+    const currentUserId = localStorage.getItem("svvNetId");
+    if (currentUserId) {
+      setFormData((prev) => ({ ...prev, svvNetId: currentUserId }));
+    }
+  }, []);
+
+  // Effect to populate form data when 'data' prop changes (e.g., for editing or view mode)
   useEffect(() => {
     if (data) {
       setFormData({
@@ -75,222 +173,95 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
         projectDescription: data.projectDescription || "",
         finance: data.finance || "",
         guideNames: data.guideNames && data.guideNames.length > 0 ? data.guideNames : [""],
-        employeeCodes: data.employeeCodes && data.employeeCodes.length > 0 ? data.employeeCodes : [""],
-        svvNetId: data.svvNetId || svvNetIdRef.current, // Use svvNetId from data if available
-        studentDetails: data.studentDetails || initialFormData.studentDetails,
+        employeeCodes: data.employeeCodes && data.employeeCodes.length > 0 ? data.employeeCodes : [""],
+        svvNetId: data.svvNetId || formData.svvNetId || "",
+        studentDetails: data.studentDetails || Array(4).fill({
+          branch: "",
+          yearOfStudy: "",
+          studentName: "",
+          rollNumber: "",
+        }),
         status: data.status || "pending",
+        uploadedFiles: data.uploadedFiles || [], // Ensure this is an array of file objects
+        errors: {},
       });
+      setFormId(data._id || null);
 
-      setPdfFiles(data.pdfFiles || []);
-      setZipFile(data.zipFileDetails || null);
-      setGroupLeaderSignature(data.groupLeaderSignature || null);
-      setGuideSignature(data.guideSignature || null);
-      setFormId(data._id);
-
-      originalPdfFilesRef.current = data.pdfFiles || [];
-      originalZipFileRef.current = data.zipFileDetails || null;
-      originalGroupLeaderSignatureRef.current = data.groupLeaderSignature || null;
-      originalGuideSignatureRef.current = data.guideSignature || null;
-    } else {
-        // Reset form if data is null (e.g., navigating away from edit to new form)
-        setFormData(prev => ({...initialFormData, svvNetId: svvNetIdRef.current})); // Keep svvNetId from localStorage
-        setPdfFiles([]);
-        setZipFile(null);
+      if (data.groupLeaderSignature && data.groupLeaderSignature.id) { // Use .id as per getFileDetailsAndUrl return
+        setGroupLeaderSignature({
+          fileId: data.groupLeaderSignature.id,
+          url: data.groupLeaderSignature.url,
+          name: data.groupLeaderSignature.originalName || "Group Leader Signature",
+          size: data.groupLeaderSignature.size
+        });
+      } else {
         setGroupLeaderSignature(null);
+      }
+
+      // Correct Guide Signature Mapping
+      // data.guideSignature should now be the processed object
+      if (data.guideSignature && data.guideSignature.id) { // Use .id as per getFileDetailsAndUrl return
+        setGuideSignature({
+          fileId: data.guideSignature.id,
+          url: data.guideSignature.url,
+          name: data.guideSignature.originalName || "Guide Signature",
+          size: data.guideSignature.size
+        });
+      } else {
         setGuideSignature(null);
-        setFormId(null);
-        originalPdfFilesRef.current = [];
-        originalZipFileRef.current = null;
-        originalGroupLeaderSignatureRef.current = null;
-        originalGuideSignatureRef.current = null;
+      }
     }
   }, [data]);
 
+  useEffect(() => {
+    if (data && viewOnly) {
+      // Existing PDF mapping
+      setFormData((prev) => ({
+        ...prev,
+        uploadedFiles: (data.pdfFileIds || []).map((fileId) => ({
+          fileId: fileId,
+          url: `/api/ug1form/uploads/files/${fileId}`
+        }))
+      }));
+
+      // Correct Group Leader Signature Mapping
+      if (data.groupLeaderSignatureId && data.groupLeaderSignatureId.$oid) {
+        setGroupLeaderSignature({
+          fileId: data.groupLeaderSignatureId.$oid,
+          url: `/api/ug1form/uploads/files/${data.groupLeaderSignatureId.$oid}`,
+          name: "Group Leader Signature"
+        });
+      }
+
+      // Correct Guide Signature Mapping
+      if (data.guideSignatureId && data.guideSignatureId.$oid) {
+        setGuideSignature({
+          fileId: data.guideSignatureId.$oid,
+          url: `/api/ug1form/uploads/files/${data.guideSignatureId.$oid}`,
+          name: "Guide Signature"
+        });
+      }
+    }
+  }, [data, viewOnly]);
+
+  // Determine if core inputs should be disabled (viewOnly or submitting)
+  const disableCoreInputs = viewOnly || isSubmitting;
+  // Determine if file controls (upload/remove buttons) should be disabled
+  const disableFileControls = viewOnly || isSubmitting;
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleStudentDetailsChange = (index, field, value) => {
-    setFormData((prev) => {
-      const updatedStudents = prev.studentDetails.map((student, i) =>
-        i === index ? { ...student, [field]: value } : student
-      );
-      return { ...prev, studentDetails: updatedStudents };
-    });
   };
 
   const handleRadioChange = (value) => {
     setFormData((prev) => ({ ...prev, finance: value }));
   };
 
-  const handleFileUpload = async (e) => {
-    if (viewOnly) return;
-    const files = Array.from(e.target.files);
-    const validFiles = [];
-
-    const currentPdfFileNames = pdfFiles.map(file => file.name); // Assumes file.name exists for both File and {name,url}
-    const currentZipFileName = zipFile?.name;
-    const existingFileNames = new Set([...currentPdfFileNames, ...(currentZipFileName ? [currentZipFileName] : [])]);
-
-    files.forEach((file) => {
-      if (file.type !== "application/pdf") {
-        alert("❌ Only PDF files are allowed.");
-      } else if (file.size > 5 * 1024 * 1024) {
-        alert(`❌ File "${file.name}" must be less than 5MB.`);
-      } else if (existingFileNames.has(file.name)) {
-        alert(`❌ File "${file.name}" already selected or uploaded.`);
-      } else {
-        validFiles.push(file);
-      }
-    });
-
-    if (validFiles.length === 0) {
-        e.target.value = null; // Clear the input if no valid files were added
-        return;
-    }
-
-    const currentPdfsRetained = pdfFiles.filter(f => f.url); // PDFs already on server
-    const totalFilesAfterAddition = currentPdfsRetained.length + validFiles.length;
-
-    if (totalFilesAfterAddition <= 5) {
-      setZipFile(null); // Clear any existing zip if we are going with individual PDFs
-      setPdfFiles((prev) => {
-        const existingServerFiles = prev.filter(f => f.url); // Keep {name,url} from server
-        const newLocalFiles = prev.filter(f => f instanceof File); // Keep existing local File objects
-        return [...existingServerFiles, ...newLocalFiles, ...validFiles]; // Add new File objects
-      });
-    } else {
-      const zip = new JSZip();
-      // Add newly selected valid files to the zip
-      validFiles.forEach((file) => zip.file(file.name, file));
-
-      // Add existing local File objects to the zip
-      pdfFiles.filter(f => f instanceof File).forEach(localFile => zip.file(localFile.name, localFile));
-
-      // Fetch and add existing PDFs from server (those with URLs)
-      const fetchAndAddExistingPdfs = currentPdfsRetained.map(async (uploadedFile) => {
-        try {
-          const response = await fetch(uploadedFile.url);
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status} for ${uploadedFile.name}`);
-          const blob = await response.blob();
-          zip.file(uploadedFile.name, blob);
-        } catch (error) {
-          console.error(`Error fetching existing PDF ${uploadedFile.name} for zipping:`, error);
-          alert(`Could not fetch ${uploadedFile.name} to include in the ZIP. It will be skipped.`);
-        }
-      });
-      await Promise.all(fetchAndAddExistingPdfs);
-
-      try {
-        const content = await zip.generateAsync({ type: "blob" });
-        const zipFileBlob = new File([content], `documents-${Date.now()}.zip`, { type: "application/zip" });
-        setZipFile(zipFileBlob);
-        setPdfFiles([]); // Clear individual PDFs as they are now in the zip
-      } catch (err) {
-        console.error("Zip Error:", err);
-        alert("❌ Failed to zip files.");
-      }
-    }
-    e.target.value = null;
-  };
-
-  const removeFile = async (indexToRemove) => {
-    if (viewOnly) return;
-
-    const removedFile = pdfFiles[indexToRemove];
-    const updatedPdfs = pdfFiles.filter((_, i) => i !== indexToRemove);
-
-    // If the removed file was one that had a URL (i.e., it's on the server),
-    // we might need to explicitly clear it from the backend if the form is saved later.
-    // For now, this function only updates frontend state. The actual clearing from DB
-    // will be handled by handleUploadDocuments based on comparison with original refs.
-
-    setPdfFiles(updatedPdfs);
-
-    // Re-evaluate if a zip is needed or if existing zip should be updated
-    if (zipFile || updatedPdfs.length > 5) { // If there was a zip or still more than 5 files
-        const filesToZip = [];
-        // Add remaining PDFs (both server URLs and local Files)
-        updatedPdfs.forEach(f => filesToZip.push(f));
-
-        if (filesToZip.length === 0 && zipFile) { // No files left but there was a zip
-            setZipFile(null); // Clear zip if all constituent files are gone
-            return;
-        }
-        if (filesToZip.length <= 5 && filesToZip.length > 0) { // If remaining files are 5 or less, no zip
-            setZipFile(null);
-            setPdfFiles(filesToZip); // these are already in the correct format
-            return;
-        }
-        if (filesToZip.length === 0) return; // Nothing to zip
-
-        // Re-zip remaining files
-        const zip = new JSZip();
-        const fetchAndAddPromises = filesToZip.map(async (fileToZip) => {
-            if (fileToZip.url) { // file from server
-                try {
-                    const response = await fetch(fileToZip.url);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    const blob = await response.blob();
-                    zip.file(fileToZip.name, blob);
-                } catch (error) {
-                    console.error(`Error re-fetching PDF ${fileToZip.name} for zipping:`, error);
-                }
-            } else { // local File object
-                zip.file(fileToZip.name, fileToZip);
-            }
-        });
-
-        await Promise.all(fetchAndAddPromises);
-
-        try {
-            const content = await zip.generateAsync({ type: "blob" });
-            const zipFileBlob = new File([content], `documents-${Date.now()}.zip`, { type: "application/zip" });
-            setZipFile(zipFileBlob);
-            setPdfFiles([]); // All are in zip now
-        } catch (err) {
-            console.error("Re-zip Error after removal:", err);
-            alert("❌ Failed to re-zip files after removal.");
-            setPdfFiles(updatedPdfs); // Revert to non-zipped if re-zip fails
-        }
-    }
-  };
-
-  const removeZipFile = () => {
-    if (viewOnly) return;
-    setZipFile(null);
-    // Consider restoring individual PDFs if they were from server.
-    // For simplicity, user might need to re-upload if they want individual files.
-    // Or, if originalPdfFilesRef.current had files, you could potentially restore them to pdfFiles state.
-  };
-
-  const handleSignatureUpload = (e, type) => {
-    if (viewOnly) return;
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) { // Allow any image type, or be specific e.g. image/jpeg, image/png
-      alert("❌ Only image files are allowed for signatures.");
-      e.target.value = null;
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) { // 2MB limit
-      alert("❌ Signature image must be less than 2MB.");
-      e.target.value = null;
-      return;
-    }
-
-    if (type === "groupLeader") setGroupLeaderSignature(file);
-    else if (type === "guide") setGuideSignature(file);
-    e.target.value = null;
-  };
-
   const handleGuideChange = (index, field, value) => {
     setFormData((prev) => {
-      const updatedArray = [...prev[field]];
-      updatedArray[index] = value;
-      return { ...prev, [field]: updatedArray };
+      const newArray = [...prev[field]];
+      newArray[index] = value;
+      return { ...prev, [field]: newArray };
     });
   };
 
@@ -303,271 +274,245 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
   };
 
   const removeGuide = (index) => {
-    if (formData.guideNames.length <= 1) { // Always keep at least one guide input row
-        alert("At least one guide entry is required.");
-        return;
-    }
-    setFormData((prev) => ({
-      ...prev,
-      guideNames: prev.guideNames.filter((_, i) => i !== index),
-      employeeCodes: prev.employeeCodes.filter((_, i) => i !== index),
-    }));
-  };
-
-  const uploadSignature = async (file, type, currentFormId) => {
-    const signatureFormData = new FormData();
-    signatureFormData.append("file", file);
-    try {
-      // console.log(`Uploading ${type} signature for formId: ${currentFormId}`);
-      const response = await axios.post(
-        `http://localhost:5000/api/ug1form/uploadSignature/${currentFormId}/${type}`,
-        signatureFormData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      console.log(`✅ ${type} Signature Uploaded:`, response.data);
-    } catch (error) {
-      console.error(`❌ Error uploading ${type} signature:`, error.response?.data || error.message);
-      throw new Error(`Failed to upload ${type} signature.`);
-    }
-  };
-
-  const handleUploadDocuments = async (currentFormId) => {
-    // console.log("handleUploadDocuments called for formId:", currentFormId);
-    // console.log("Current pdfFiles state:", pdfFiles);
-    // console.log("Current zipFile state:", zipFile);
-    // console.log("Original PDF files:", originalPdfFilesRef.current);
-    // console.log("Original ZIP file:", originalZipFileRef.current);
-
-    const isNewZipFileSelected = zipFile instanceof File;
-    const newIndividualPdfFiles = pdfFiles.filter(file => file instanceof File);
-
-    const wasZipPreviouslyPresent = originalZipFileRef.current !== null;
-    const werePdfsPreviouslyPresent = originalPdfFilesRef.current.length > 0;
-
-    // Determine if DB clear is needed
-    // Clear old PDFs if new ZIP is primary, or if all PDFs were removed and no new zip/pdfs.
-    const needsClearPdfsInDb = (werePdfsPreviouslyPresent && isNewZipFileSelected) ||
-                             (werePdfsPreviouslyPresent && !isNewZipFileSelected && newIndividualPdfFiles.length === 0 && pdfFiles.filter(f=>f.url).length === 0);
-
-    // Clear old ZIP if new individual PDFs are primary, or if zip was removed and no new zip/pdfs.
-    const needsClearZipInDb = (wasZipPreviouslyPresent && !isNewZipFileSelected && newIndividualPdfFiles.length > 0) ||
-                            (wasZipPreviouslyPresent && !isNewZipFileSelected && zipFile === null);
-
-
-    if (needsClearPdfsInDb) {
-      try {
-        // console.log("Attempting to clear old PDF file IDs in DB for formId:", currentFormId);
-        await axios.put(`http://localhost:5000/api/ug1form/clearPdfFiles/${currentFormId}`);
-        // console.log("Cleared old PDF file IDs in DB.");
-        originalPdfFilesRef.current = []; // Reflect that they are cleared
-      } catch (clearError) {
-        console.error("Error clearing old PDF files in DB:", clearError.response?.data || clearError.message);
-        // Decide if this is a critical failure
-      }
-    }
-    if (needsClearZipInDb) {
-      try {
-        // console.log("Attempting to clear old ZIP file ID in DB for formId:", currentFormId);
-        await axios.put(`http://localhost:5000/api/ug1form/clearZipFile/${currentFormId}`);
-        // console.log("Cleared old ZIP file ID in DB.");
-        originalZipFileRef.current = null; // Reflect that it's cleared
-      } catch (clearError) {
-        console.error("Error clearing old ZIP file in DB:", clearError.response?.data || clearError.message);
-      }
-    }
-
-    if (isNewZipFileSelected) {
-      const docFormData = new FormData();
-      docFormData.append("pdfZip", zipFile); // 'pdfZip' must match backend key
-      // console.log("Uploading new ZIP file for formId:", currentFormId);
-      await axios.post(`http://localhost:5000/api/ug1form/uploadZip/${currentFormId}`, docFormData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      // console.log("New ZIP file uploaded.");
-    } else if (newIndividualPdfFiles.length > 0) {
-      for (const file of newIndividualPdfFiles) {
-        const docFormData = new FormData();
-        docFormData.append("pdfFile", file); // 'pdfFile' must match backend key
-        // console.log(`Uploading new PDF ${file.name} for formId:`, currentFormId);
-        await axios.post(`http://localhost:5000/api/ug1form/uploadPDF/${currentFormId}`, docFormData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        // console.log(`New PDF ${file.name} uploaded.`);
-      }
-    } else {
-      // console.log("No new documents to upload.");
-    }
-  };
-
-  const handleSaveFormData = async () => {
-    setErrorMessage("");
-    const safeTrim = (str) => (typeof str === "string" ? str.trim() : "");
-
-    if (!safeTrim(formData.projectTitle) || !safeTrim(formData.projectUtility) || !safeTrim(formData.projectDescription) || !formData.finance) {
-      setErrorMessage("Please fill all required textual fields including finance option.");
-      return null;
-    }
-    if (!formData.guideNames.some(name => safeTrim(name)) || !formData.employeeCodes.some(code => safeTrim(code)) || formData.guideNames.findIndex(name => safeTrim(name) === "") !== formData.employeeCodes.findIndex(code => safeTrim(code) === "")) {
-        const guideWithNoCode = formData.guideNames.some((name, index) => safeTrim(name) && !safeTrim(formData.employeeCodes[index]));
-        const codeWithNoGuide = formData.employeeCodes.some((code, index) => safeTrim(code) && !safeTrim(formData.guideNames[index]));
-        if (guideWithNoCode || codeWithNoGuide || !formData.guideNames.some(name => safeTrim(name))) {
-            setErrorMessage("Please provide at least one Guide/Co-Guide name with a corresponding Employee Code. Both fields are required if one is filled.");
-            return null;
-        }
-    }
-     const filledStudents = formData.studentDetails.filter(
-      (student) =>
-        safeTrim(student.studentName) ||
-        safeTrim(student.rollNumber) ||
-        safeTrim(student.branch) ||
-        safeTrim(student.yearOfStudy)
-    );
-
-    if (filledStudents.length === 0) {
-      setErrorMessage("At least one student's complete details must be filled.");
-      return null;
-    }
-
-    for (let i = 0; i < filledStudents.length; i++) {
-        const student = filledStudents[i];
-        if (!safeTrim(student.studentName) || !safeTrim(student.rollNumber) || !safeTrim(student.branch) || !safeTrim(student.yearOfStudy)) {
-            setErrorMessage(`Please complete all fields for student ${formData.studentDetails.indexOf(student) + 1} if any field is entered.`);
-            return null;
-        }
-        if (!/^\d{11}$/.test(safeTrim(student.rollNumber))) {
-            setErrorMessage(`Roll Number for student ${formData.studentDetails.indexOf(student) + 1} must be exactly 11 digits.`);
-            return null;
-        }
-    }
-
-
-    if (zipFile instanceof File && zipFile.size > 20 * 1024 * 1024) { // 20MB
-      setErrorMessage("The zipped documents file exceeds the 20MB size limit.");
-      return null;
-    } else if (pdfFiles.some(file => file instanceof File && file.size > 5 * 1024 * 1024)) { // 5MB
-      setErrorMessage("One or more PDF files exceed the 5MB size limit.");
-      return null;
-    }
-
-    if ((groupLeaderSignature === null && !originalGroupLeaderSignatureRef.current) || (groupLeaderSignature instanceof File && groupLeaderSignature.size === 0)) {
-      setErrorMessage("Please upload the Group Leader's signature (image).");
-      return null;
-    }
-    if ((guideSignature === null && !originalGuideSignatureRef.current) || (guideSignature instanceof File && guideSignature.size === 0)) {
-      setErrorMessage("Please upload the Guide's signature (image).");
-      return null;
-    }
-
-    const dataToSend = { ...formData, svvNetId: svvNetIdRef.current };
-    // Filter out empty student details before sending
-    dataToSend.studentDetails = dataToSend.studentDetails.filter(
-        s => s.studentName.trim() || s.rollNumber.trim() || s.branch.trim() || s.yearOfStudy.trim()
-    );
-    // Filter out empty guide/employee code pairs
-    const validGuides = [];
-    const validCodes = [];
-    dataToSend.guideNames.forEach((name, index) => {
-        if (safeTrim(name) && safeTrim(dataToSend.employeeCodes[index])) {
-            validGuides.push(safeTrim(name));
-            validCodes.push(safeTrim(dataToSend.employeeCodes[index]));
-        }
+    setFormData((prev) => {
+      const newGuideNames = prev.guideNames.filter((_, i) => i !== index);
+      const newEmployeeCodes = prev.employeeCodes.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        guideNames: newGuideNames,
+        employeeCodes: newEmployeeCodes,
+      };
     });
-    dataToSend.guideNames = validGuides;
-    dataToSend.employeeCodes = validCodes;
+  };
 
+  const handleStudentDetailsChange = (index, field, value) => {
+    setFormData((prev) => {
+      const newStudentDetails = [...prev.studentDetails];
+      newStudentDetails[index] = { ...newStudentDetails[index], [field]: value };
+      return { ...prev, studentDetails: newStudentDetails };
+    });
+  };
 
-    // console.log("Data being sent to saveFormData:", JSON.stringify(dataToSend, null, 2));
-    try {
-      const endpoint = formId ? `http://localhost:5000/api/ug1form/updateFormData/${formId}` : "http://localhost:5000/api/ug1form/saveFormData";
-      const method = formId ? "put" : "post";
-      
-      const response = await axios[method](endpoint, dataToSend);
-      
-      const returnedFormId = response.data.formId || (formId && response.data.message ? formId : null) ; // If updating, formId might not be in response
-      if (returnedFormId) {
-        if (!formId) setFormId(returnedFormId); // Set formId if it's a new form
-        return returnedFormId;
-      } else {
-        setErrorMessage(response.data.message || "Failed to save form data. Form ID not received.");
-        return null;
-      }
-    } catch (error) {
-      console.error("❌ Error Saving Form Data:", error.response?.data || error.message);
-      setErrorMessage(error.response?.data?.error || "Error saving form data. Try again.");
-      return null;
+  const handleSignatureUpload = (e, type) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const newErrors = { ...formData.errors };
+    let hasError = false;
+
+    // File size validation (5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      newErrors[`${type}Signature`] = "Signature file size exceeds 5MB.";
+      hasError = true;
+    } else {
+      delete newErrors[`${type}Signature`];
+    }
+
+    setFormData(prev => ({ ...prev, errors: newErrors }));
+
+    if (hasError) {
+      e.target.value = ''; // Clear file input
+      if (type === "groupLeader") setGroupLeaderSignature(null);
+      if (type === "guide") setGuideSignature(null);
+      return;
+    }
+
+    const fileObject = {
+      file: file,
+      name: file.name,
+      size: file.size,
+      type: file.type, // or mimetype
+      url: URL.createObjectURL(file) // Create a temporary URL for preview
+    };
+
+    if (type === "groupLeader") {
+      setGroupLeaderSignature(fileObject);
+    } else if (type === "guide") {
+      setGuideSignature(fileObject);
     }
   };
+
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    let newErrors = { ...formData.errors };
+    let currentUploadedFiles = [...formData.uploadedFiles];
+    let hasError = false;
+
+    // Clear previous zip errors if any
+    delete newErrors.zip_generation;
+    delete newErrors.zip_size;
+
+    // Check if any file is a ZIP
+    const hasZip = files.some(file => file.type === "application/zip" || file.type === "application/x-zip-compressed");
+    const pdfFiles = files.filter(file => file.type === "application/pdf");
+
+    if (hasZip && files.length > 1) {
+      newErrors.zip_generation = "Cannot upload a ZIP file with other files. Please upload either a single ZIP or multiple PDFs.";
+      hasError = true;
+    } else if (hasZip) {
+      const zipFile = files[0];
+      if (zipFile.size > 25 * 1024 * 1024) { // 25MB for ZIP
+        newErrors.zip_size = "ZIP file size exceeds 25MB.";
+        hasError = true;
+      } else {
+        // If it's a valid single ZIP, replace all existing files
+        currentUploadedFiles = [{
+          file: zipFile,
+          name: zipFile.name,
+          size: zipFile.size,
+          type: zipFile.type,
+          url: URL.createObjectURL(zipFile)
+        }];
+      }
+    } else { // Handling PDF files
+      if (pdfFiles.length !== files.length) {
+        newErrors.file_type = "Only PDF files are allowed when not uploading a ZIP.";
+        hasError = true;
+      } else if (pdfFiles.length + currentUploadedFiles.length > 5) {
+        newErrors.file_count = "Cannot upload more than 5 PDF documents in total.";
+        hasError = true;
+      } else {
+        for (const file of pdfFiles) {
+          if (file.size > 5 * 1024 * 1024) { // 5MB for PDF
+            newErrors[`file_${file.name}`] = `File "${file.name}" size exceeds 5MB.`;
+            hasError = true;
+          } else {
+            currentUploadedFiles.push({
+              file: file,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              url: URL.createObjectURL(file) // Create temporary URL for preview
+            });
+          }
+        }
+      }
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      uploadedFiles: currentUploadedFiles,
+      errors: newErrors,
+    }));
+
+    if (hasError) {
+      e.target.value = ''; // Clear file input if there's an error
+    }
+  };
+
+
+  const handleRemoveFile = useCallback((fieldName, index) => {
+    setFormData(prev => {
+      const newErrors = { ...prev.errors };
+      if (fieldName === 'uploadedFiles') {
+        const newUploadedFiles = [...prev.uploadedFiles];
+        const removedFileName = newUploadedFiles[index]?.name;
+        newUploadedFiles.splice(index, 1);
+        if (removedFileName) {
+          delete newErrors[`file_${removedFileName}`]; // Clear specific file error
+        }
+        return { ...prev, uploadedFiles: newUploadedFiles, errors: newErrors };
+      } else if (fieldName === 'groupLeaderSignature') {
+        setGroupLeaderSignature(null);
+        originalGroupLeaderSignatureRef.current = null;
+        delete newErrors.groupLeaderSignature;
+        return { ...prev, errors: newErrors };
+      } else if (fieldName === 'guideSignature') {
+        setGuideSignature(null);
+        originalGuideSignatureRef.current = null;
+        delete newErrors.guideSignature;
+        return { ...prev, errors: newErrors };
+      }
+      return prev;
+    });
+  }, []); // Dependencies for useCallback
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (viewOnly || isSubmitting) return;
-
     setIsSubmitting(true);
     setErrorMessage("");
-    // console.log("--- Starting Form Submission ---");
+
+    // Basic validation
+    if (!formData.projectTitle || !formData.projectDescription) {
+        setErrorMessage("Please fill in all required fields.");
+        setIsSubmitting(false);
+        return;
+    }
 
     try {
-      const currentFormId = await handleSaveFormData(); // This now handles create/update
-      if (!currentFormId) {
-        setIsSubmitting(false);
-        // console.log("Form data save failed, submission halted.");
-        return;
-      }
-      // console.log("Form data saved/updated. Current Form ID:", currentFormId);
+        const fullFormData = new FormData();
 
-      // Documents
-      try {
-        // console.log("Proceeding to upload/clear documents...");
-        await handleUploadDocuments(currentFormId);
-      } catch (docErr) {
-        console.error("❌ Document Upload/Clear Failed:", docErr.message || docErr);
-        setErrorMessage(`Error with documents: ${docErr.message || 'Please try again.'}`);
-        // Decide if submission should halt or continue if only non-critical part fails
-        // For now, we'll let it try signatures. In production, might halt.
-      }
+        // Append all text fields
+        fullFormData.append("svvNetId", formData.svvNetId);
+        fullFormData.append("projectTitle", formData.projectTitle);
+        fullFormData.append("projectUtility", formData.projectUtility);
+        fullFormData.append("projectDescription", formData.projectDescription);
+        fullFormData.append("finance", formData.finance);
+        fullFormData.append("amountClaimed", formData.amountClaimed || ''); // Ensure it's not undefined if not always present
+        fullFormData.append("status", formData.status);
 
-      // Signatures
-      try {
-        // console.log("Proceeding to upload/clear signatures...");
-        if (groupLeaderSignature instanceof File) {
-          await uploadSignature(groupLeaderSignature, "groupLeader", currentFormId);
-        } else if (groupLeaderSignature === null && originalGroupLeaderSignatureRef.current) {
-          // console.log("Clearing group leader signature in DB...");
-          await axios.put(`http://localhost:5000/api/ug1form/clearSignature/${currentFormId}/groupLeader`);
-          originalGroupLeaderSignatureRef.current = null; // Reflect change
+        // Stringify studentDetails (this is already correct, assuming it's always an array of objects)
+        fullFormData.append("studentDetails", JSON.stringify(formData.studentDetails));
+
+        // --- CORRECTED LOGIC FOR GUIDES ---
+        // Construct the 'guides' array from guideNames and employeeCodes
+        const formattedGuides = formData.guideNames.map((name, index) => ({
+            name: name,
+            employeeCode: formData.employeeCodes[index] // Ensure employeeCodes has a corresponding entry for each guideName
+        }));
+        fullFormData.append("guides", JSON.stringify(formattedGuides));
+
+        // Append files/signatures if they exist and are new
+        // Ensure 'file' property exists, as 'url' is just for preview
+        if (groupLeaderSignature && groupLeaderSignature.file) {
+            fullFormData.append("groupLeaderSignature", groupLeaderSignature.file);
+        }
+        if (guideSignature && guideSignature.file) {
+            fullFormData.append("guideSignature", guideSignature.file);
         }
 
-        if (guideSignature instanceof File) {
-          await uploadSignature(guideSignature, "guide", currentFormId);
-        } else if (guideSignature === null && originalGuideSignatureRef.current) {
-          // console.log("Clearing guide signature in DB...");
-          await axios.put(`http://localhost:5000/api/ug1form/clearSignature/${currentFormId}/guide`);
-          originalGuideSignatureRef.current = null; // Reflect change
-        }
-      } catch (sigErr) {
-        console.error("❌ Signature Upload/Clear Failed:", sigErr.message || sigErr);
-        setErrorMessage(`Error with signatures: ${sigErr.message || 'Please try again.'}`);
-      }
+        // Append PDF files (if present, filter out existing ones that are not new uploads)
+        // This loop handles both PDF and a single ZIP file based on your logic in handleFileUpload
+        formData.uploadedFiles.forEach(fileObj => {
+            if (fileObj.file && (fileObj.type === "application/pdf" || fileObj.type === "application/x-zip-compressed")) {
+                if (fileObj.type === "application/pdf") {
+                    fullFormData.append("pdfFiles", fileObj.file); // Match backend field name 'pdfFiles'
+                } else if (fileObj.type === "application/x-zip-compressed") {
+                    fullFormData.append("zipFile", fileObj.file); // Match backend field name 'zipFile'
+                }
+            }
+        });
 
-      alert("✅ Form submitted successfully!");
-      // Reset form state or redirect as needed
-      // Example: If it was a new form, reset. If edit, maybe just show success.
-      if (!data) { // If it was a new submission (not an edit)
-        setFormData(prev => ({...initialFormData, svvNetId: svvNetIdRef.current}));
-        setPdfFiles([]);
-        setZipFile(null);
-        setGroupLeaderSignature(null);
-        setGuideSignature(null);
-        setFormId(null);
-        if(fileInputRef.current) fileInputRef.current.value = "";
-      }
-      // Or redirect: window.location.href = '/success-page';
-    } catch (err) { // Catch errors from handleSaveFormData if not caught internally
-      console.error("❌ Top Level Submission Error:", err);
-      setErrorMessage(err.message || "An unexpected error occurred during submission.");
+        // Send the single request
+        let formResponse;
+        if (formId) {
+            formResponse = await axios.post("/api/ug1form/saveFormData", fullFormData, { // Consider changing to axios.put if you have a dedicated update route
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            console.log("Form and files updated (consider PUT endpoint refactor):", formResponse.data);
+        } else {
+            // For new form creation
+            formResponse = await axios.post("/api/ug1form/saveFormData", fullFormData, {
+                headers: { "Content-Type": "multipart/form-data" },
+            });
+            console.log("Form and files saved:", formResponse.data);
+            setFormId(formResponse.data.id); // Set the formId from the response
+        }
+
+        alert("Form and files submitted successfully!");
+        // Optionally redirect or clear form
+
+    } catch (error) {
+        console.error("Error submitting form:", error);
+        if (error.response && error.response.data && error.response.data.message) {
+            setErrorMessage(error.response.data.message);
+        } else if (error.response && error.response.data && error.response.data.error) {
+            setErrorMessage(error.response.data.error);
+        } else {
+            setErrorMessage("An unexpected error occurred.");
+        }
     } finally {
-      setIsSubmitting(false);
-      // console.log("--- Form Submission Ended ---");
+        setIsSubmitting(false);
     }
   };
 
@@ -577,7 +522,7 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
 
   // JSX Rendering
   return (
-    <div className="form-container ug1-form"> {/* Added specific class for UG1 */}
+    <div className="form-container ug1-form">
       <h2>Under Graduate Form 1</h2>
       <p className="form-category">In-house Student Project within Department</p>
 
@@ -590,9 +535,10 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
           type="text"
           value={formData.projectTitle}
           onChange={(e) => handleInputChange("projectTitle", e.target.value)}
-          disabled={viewOnly}
+          disabled={disableCoreInputs}
           required
         />
+        {formData.errors.projectTitle && <p className="error-message">{formData.errors.projectTitle}</p>}
 
         <label htmlFor="projectUtility">Utility of the Project:</label>
         <input
@@ -600,29 +546,32 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
           type="text"
           value={formData.projectUtility}
           onChange={(e) => handleInputChange("projectUtility", e.target.value)}
-          disabled={viewOnly}
+          disabled={disableCoreInputs}
           required
         />
+        {formData.errors.projectUtility && <p className="error-message">{formData.errors.projectUtility}</p>}
 
         <label htmlFor="projectDescription">Description:</label>
         <textarea
           id="projectDescription"
           value={formData.projectDescription}
           onChange={(e) => handleInputChange("projectDescription", e.target.value)}
-          disabled={viewOnly}
+          disabled={disableCoreInputs}
           required
         />
+        {formData.errors.projectDescription && <p className="error-message">{formData.errors.projectDescription}</p>}
 
         <fieldset className="form-group">
             <legend>Whether received finance from any other agency:</legend>
             <div className="radio-group">
                 <label>
-                <input type="radio" name="finance" value="Yes" checked={formData.finance === "Yes"} onChange={() => handleRadioChange("Yes")} disabled={viewOnly} required /> Yes
+                <input type="radio" name="finance" value="Yes" checked={formData.finance === "Yes"} onChange={() => handleRadioChange("Yes")} disabled={disableCoreInputs} required /> Yes
                 </label>
                 <label>
-                <input type="radio" name="finance" value="No" checked={formData.finance === "No"} onChange={() => handleRadioChange("No")} disabled={viewOnly} /> No
+                <input type="radio" name="finance" value="No" checked={formData.finance === "No"} onChange={() => handleRadioChange("No")} disabled={disableCoreInputs} /> No
                 </label>
             </div>
+            {formData.errors.finance && <p className="error-message">{formData.errors.finance}</p>}
         </fieldset>
 
 
@@ -632,19 +581,21 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
             <div className="form-row">
                 <div>
                     <label htmlFor={`guideName-${index}`}>Name of Guide/Co-Guide {index + 1}:</label>
-                    <input id={`guideName-${index}`} type="text" value={name} onChange={(e) => handleGuideChange(index, "guideNames", e.target.value)} disabled={viewOnly} />
+                    <input id={`guideName-${index}`} type="text" value={name} onChange={(e) => handleGuideChange(index, "guideNames", e.target.value)} disabled={disableCoreInputs} />
+                    {formData.errors[`guideName_${index}`] && <p className="error-message">{formData.errors[`guideName_${index}`]}</p>}
                 </div>
                 <div>
                     <label htmlFor={`empCode-${index}`}>Employee Code {index + 1}:</label>
-                    <input id={`empCode-${index}`} type="text" value={formData.employeeCodes[index]} onChange={(e) => handleGuideChange(index, "employeeCodes", e.target.value)} disabled={viewOnly} />
+                    <input id={`empCode-${index}`} type="text" value={formData.employeeCodes[index]} onChange={(e) => handleGuideChange(index, "employeeCodes", e.target.value)} disabled={disableCoreInputs} />
+                    {formData.errors[`employeeCode_${index}`] && <p className="error-message">{formData.errors[`employeeCode_${index}`]}</p>}
                 </div>
             </div>
-            {!viewOnly && formData.guideNames.length > 1 && (
+            {!disableCoreInputs && formData.guideNames.length > 1 && (
               <button type="button" className="remove-btn-small" onClick={() => removeGuide(index)}>Remove Guide {index+1}</button>
             )}
           </div>
         ))}
-        {!viewOnly && (
+        {!disableCoreInputs && (
           <button type="button" className="add-btn" onClick={addGuide}>➕ Add Another Guide</button>
         )}
 
@@ -664,21 +615,21 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
                 {formData.studentDetails.map((student, index) => (
                 <tr key={`student-${index}`}>
                     <td>{index + 1}</td>
-                    <td><input type="text" value={student.branch} onChange={(e) => handleStudentDetailsChange(index, "branch", e.target.value)} disabled={viewOnly} /></td>
-                    <td><input type="text" value={student.yearOfStudy} onChange={(e) => handleStudentDetailsChange(index, "yearOfStudy", e.target.value)} disabled={viewOnly} /></td>
-                    <td><input type="text" value={student.studentName} onChange={(e) => handleStudentDetailsChange(index, "studentName", e.target.value)} disabled={viewOnly} /></td>
-                    <td><input type="text" pattern="\d{11}" title="Must be 11 digits" value={student.rollNumber} onChange={(e) => handleStudentDetailsChange(index, "rollNumber", e.target.value)} disabled={viewOnly} /></td>
+                    <td><input type="text" value={student.branch} onChange={(e) => handleStudentDetailsChange(index, "branch", e.target.value)} disabled={disableCoreInputs} /></td>
+                    <td><input type="text" value={student.yearOfStudy} onChange={(e) => handleStudentDetailsChange(index, "yearOfStudy", e.target.value)} disabled={disableCoreInputs} /></td>
+                    <td><input type="text" value={student.studentName} onChange={(e) => handleStudentDetailsChange(index, "studentName", e.target.value)} disabled={disableCoreInputs} /></td>
+                    <td><input type="text" pattern="\d{11}" title="Must be 11 digits" value={student.rollNumber} onChange={(e) => handleStudentDetailsChange(index, "rollNumber", e.target.value)} disabled={disableCoreInputs} /></td>
                 </tr>
                 ))}
             </tbody>
             </table>
         </div>
 
-
+        {/* Signature Section */}
         <div className="signatures-section form-row">
           <div className="signature-upload">
             <label htmlFor="groupLeaderSignatureFile">Signature of Group Leader (Image):</label>
-            {!viewOnly && (
+            {!disableFileControls && (
               <>
                 <input
                   id="groupLeaderSignatureFile"
@@ -686,35 +637,22 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
                   accept="image/*"
                   onChange={(e) => handleSignatureUpload(e, "groupLeader")}
                 />
-                {groupLeaderSignature && (
-                  <div className="file-preview">
-                    {groupLeaderSignature.url ? (
-                      <>
-                        <img
-                          src={groupLeaderSignature.url}
-                          alt={groupLeaderSignature.name || "Group Leader Signature"}
-                          className="signature-image-preview"
-                        />
-                        <a
-                          href={groupLeaderSignature.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          View Current
-                        </a>
-                      </>
-                    ) : (
-                      <span>Selected: {groupLeaderSignature.name}</span>
-                    )}
-                  </div>
-                )}
               </>
             )}
+            {formData.errors.groupLeaderSignature && <p className="error-message">{formData.errors.groupLeaderSignature}</p>}
+            <FilePreview
+              fileList={groupLeaderSignature ? [groupLeaderSignature] : []}
+              onRemove={handleRemoveFile}
+              fieldName="groupLeaderSignature"
+              viewOnly={viewOnly}
+              isStudent={isStudent}
+              onViewFile={handleViewDocument}
+            />
           </div>
 
           <div className="signature-upload">
             <label htmlFor="guideSignatureFile">Signature of Guide (Image):</label>
-            {!viewOnly && (
+            {!disableFileControls && (
               <>
                 <input
                   id="guideSignatureFile"
@@ -722,55 +660,62 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
                   accept="image/*"
                   onChange={(e) => handleSignatureUpload(e, "guide")}
                 />
-                {guideSignature && (
-                  <div className="file-preview">
-                    {guideSignature.url ? (
-                      <>
-                        <img
-                          src={guideSignature.url}
-                          alt={guideSignature.name || "Guide Signature"}
-                          className="signature-image-preview"
-                        />
-                        <a
-                          href={guideSignature.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          View Current
-                        </a>
-                      </>
-                    ) : (
-                      <span>Selected: {guideSignature.name}</span>
-                    )}
-                  </div>
-                )}
               </>
             )}
+            {formData.errors.guideSignature && <p className="error-message">{formData.errors.guideSignature}</p>}
+            <FilePreview
+              fileList={guideSignature ? [guideSignature] : []}
+              onRemove={handleRemoveFile}
+              fieldName="guideSignature"
+              viewOnly={viewOnly}
+              isStudent={isStudent}
+              onViewFile={handleViewDocument}
+            />
           </div>
         </div>
-        
-        <div className="form-group">
-          <label htmlFor="supportingDocs">Upload Supporting Documents (PDF only):</label>
-          {!viewOnly && (
-            <input id="supportingDocs" type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf" multiple />
-          )}
-          <ul className="file-list">
-            {pdfFiles.map((file, index) => (
-              <li key={`pdf-${index}`}>
-                {file.url ? <a href={file.url} target="_blank" rel="noopener noreferrer">{file.name}</a> : file.name}
-                {!viewOnly && <button type="button" className="remove-btn-small" onClick={() => removeFile(index)}>Remove</button>}
-              </li>
-            ))}
-            {zipFile && (
-              <li>
-                {zipFile.url ? <a href={zipFile.url} target="_blank" rel="noopener noreferrer">{zipFile.name} (ZIP)</a> : `${zipFile.name} (ZIP)`}
-                {!viewOnly && <button type="button" className="remove-btn-small" onClick={removeZipFile}>Remove ZIP</button>}
-              </li>
-            )}
-            {!zipFile && pdfFiles.length === 0 && <li>No supporting documents selected/uploaded.</li>}
-          </ul>
-        </div>
 
+        {/* Supporting Documents Section - Upload Input */}
+        {!viewOnly && ( // Only show upload input if not in viewOnly mode
+          <div className="form-group">
+            <label>
+              Upload Additional Documents (Max 5 PDF files, 5MB each OR one ZIP file up to 25MB):
+            </label>
+            <input
+              id="supportingDocs"
+              type="file"
+              ref={fileInputRef}
+              accept=".pdf,application/pdf,.zip,application/zip,application/x-zip-compressed"
+              multiple
+              name="uploadedFiles"
+              onChange={handleFileUpload}
+            />
+            {formData.errors.zip_generation && ( // Display general zip generation error
+              <p className="error-message">{formData.errors.zip_generation}</p>
+            )}
+            {formData.errors.zip_size && ( // Display general zip size error
+              <p className="error-message">{formData.errors.zip_size}</p>
+            )}
+            {formData.errors.file_type && ( // Display file type error
+              <p className="error-message">{formData.errors.file_type}</p>
+            )}
+            {formData.errors.file_count && ( // Display file count error
+              <p className="error-message">{formData.errors.file_count}</p>
+            )}
+          </div>
+        )}
+        {!(viewOnly && isStudent) && (
+        <div className="form-group">
+          <label>Supporting Documents:</label>
+          <FilePreview
+            fileList={formData.uploadedFiles}
+            onRemove={handleRemoveFile}
+            fieldName="uploadedFiles"
+            viewOnly={viewOnly} // Pass viewOnly here
+            isStudent={isStudent} // Pass isStudent here
+            onViewFile={handleViewDocument}
+          />
+        </div>
+      )}
         <div className="form-actions">
           <button type="button" className="back-btn" onClick={handleBack} disabled={isSubmitting}>Back</button>
           {!viewOnly && (
@@ -780,6 +725,24 @@ const UG1Form = ({ data = null, viewOnly = false }) => {
           )}
         </div>
       </form>
+
+      {/* --- The Document Viewing Modal --- */}
+      <Modal isOpen={isDocModalOpen} onClose={handleCloseDocumentModal} title={docModalTitle}>
+        {docModalUrl ? (
+          <iframe
+            src={docModalUrl}
+            title={docModalTitle}
+            width="100%"
+            height="100%"
+            style={{ border: 'none' }}
+            allowFullScreen
+          >
+            <p>Your browser does not support iframes, or the document cannot be displayed.</p>
+          </iframe>
+        ) : (
+          <p className="text-center text-gray-600">No document to display.</p>
+        )}
+      </Modal>
     </div>
   );
 };

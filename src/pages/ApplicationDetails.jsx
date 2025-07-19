@@ -1,13 +1,13 @@
-// src/pages/ApplicationDetails.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import formMapper from "../components/FormComponent/FormMapper";
+import formMapper from "../components/FormComponent/FormMapper"; // Ensure this path is correct
 
 const ApplicationDetails = () => {
   const { id } = useParams();
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [userRole, setUserRole] = useState(null); // State to store userRole
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -15,55 +15,57 @@ const ApplicationDetails = () => {
       setLoading(true);
       setError(null);
 
-      try {
-        let userBranch = null;
-        let svvNetId = null; // Declare svvNetId variable
+      let userBranch = null;
+      let svvNetId = null;
+      let currentUserRole = null; // Use a temporary variable for retrieval
 
-        const userString = localStorage.getItem("user");
-        if (userString) {
-          try {
-            const user = JSON.parse(userString);
-            userBranch = user.branch;
-            svvNetId = user.svvNetId; // Get svvNetId from localStorage
-          } catch (e) {
-            console.error("Failed to parse user data from localStorage for ApplicationDetails:", e);
-            // If user data is corrupted, clear local storage and force re-login
-            localStorage.removeItem("user");
-            localStorage.removeItem("token");
-            setError("User session corrupted. Please log in again.");
-            setLoading(false);
-            // Optionally, navigate to login page
-            // navigate('/login');
-            return;
-          }
-        }
-
-        // Essential: If svvNetId is not available, the user is not authenticated for this action.
-        if (!svvNetId) {
-          setError("User not authenticated. Please log in to view application details.");
+      const userString = localStorage.getItem("user");
+      if (userString) {
+        try {
+          const user = JSON.parse(userString);
+          userBranch = user.branch;
+          svvNetId = user.svvNetId;
+          currentUserRole = user.role; // <<< Retrieve the user's role
+          setUserRole(currentUserRole); // Set userRole in component state
+        } catch (e) {
+          console.error("Failed to parse user data from localStorage for ApplicationDetails:", e);
+          localStorage.removeItem("user");
+          localStorage.removeItem("token"); // Assuming 'token' is also stored
+          setError("User session corrupted. Please log in again.");
           setLoading(false);
-          // Optionally, navigate to login page
-          // navigate('/login');
+          // navigate('/login'); // Uncomment to redirect to login
           return;
         }
+      }
 
-        // Construct the URL with both userBranch and svvNetId as query parameters
-        const baseUrl = `http://localhost:5000/api/application/${id}`;
-        const params = new URLSearchParams();
+      if (!svvNetId || !currentUserRole) { // Use currentUserRole for this check
+        setError("User authentication or role information missing. Please log in to view application details.");
+        setLoading(false);
+        // navigate('/login'); // Uncomment to redirect to login
+        return;
+      }
 
-        if (userBranch) {
-          params.append('userBranch', userBranch);
-        }
-        params.append('svvNetId', svvNetId); // Always send svvNetId for authentication/authorization
+      try {
+        const url = `http://localhost:5000/api/application/${id}`;
 
-        const url = `${baseUrl}?${params.toString()}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Add Authorization header here if you're using JWTs for authentication
+            // 'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+          },
+          body: JSON.stringify({
+            userBranch: userBranch,
+            svvNetId: svvNetId,
+            role: currentUserRole // <<< Send the user's role to the backend
+          }),
+        });
 
-        const res = await fetch(url);
         if (!res.ok) {
           const text = await res.text();
           let errorMessage = `Failed to fetch application details (status ${res.status}): ${text}`;
 
-          // Provide more user-friendly messages for common errors
           if (res.status === 404) {
             errorMessage = "Application not found or you don't have permission to access it.";
           } else if (res.status === 400 && text.includes("svvNetId is required")) {
@@ -72,7 +74,7 @@ const ApplicationDetails = () => {
           throw new Error(errorMessage);
         }
         const data = await res.json();
-        setApplication(data); // full form data directly
+        setApplication(data);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -80,47 +82,43 @@ const ApplicationDetails = () => {
       }
     };
 
-    // Only fetch if an ID is present in the URL
     if (id) fetchApplication();
-  }, [id, navigate]); // Add 'navigate' to dependency array as it's used if uncommented
+  }, [id, navigate]); // Add userRole to dependency array if you plan to react to changes, though not strictly necessary for initial fetch
 
   if (loading) return <div className="p-6">Loading application details...</div>;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
   if (!application) return <div className="p-6">No application found.</div>;
 
-  // Ensure FormComponent is defined before rendering
   const FormComponent = formMapper[application.formType];
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Application Details</h1>
       <div className="mb-4 text-gray-600 space-y-1">
-        {/* Use application.topic as the primary display, falling back to projectTitle if topic is undefined */}
         <p><strong>Topic:</strong> {
-        application.topic && application.topic !== "Untitled Project"
-          ? application.topic
-          : application.projectTitle ||
-            application.titleOfSTTP || // Add more fallbacks
-            application.formTitle || // If you use this field
-            application.title || // generic fallback
+          application.topic && application.topic !== "Untitled Project"
+            ? application.topic
+            : application.projectTitle ||
+            application.titleOfSTTP ||
+            application.formTitle ||
+            application.title ||
             'N/A'
         }</p>
-        {/* Use application.name as the primary display, falling back to other possible fields if name is undefined */}
         <p><strong>Applicant Name:</strong> {application.name || 'N/A'}</p>
         <p><strong>Submitted on:</strong> {new Date(application.submitted).toLocaleDateString()}</p>
-        {/* The branch field will now come from the backend's processed data,
-            which prioritizes the user's branch from localStorage */}
         <p><strong>Branch:</strong> {application.branch || 'N/A'}</p>
         <p><strong>Form Type:</strong> {application.formType || 'N/A'}</p>
         <p><strong>Status:</strong> {application.status || 'N/A'}</p>
       </div>
 
       {FormComponent ? (
-        <FormComponent data={application} viewOnly={true} />
+        // *** KEY CHANGE HERE: Pass userRole as a prop ***
+        <FormComponent data={application} viewOnly={true} userRole={userRole} />
       ) : (
         <p className="text-red-500">Unknown form type: {application.formType}</p>
       )}
     </div>
   );
 };
+
 export default ApplicationDetails;

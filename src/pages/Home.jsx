@@ -8,15 +8,17 @@ const forms = [
   { id: "UG_1",path: "ug1", category: "UG1 In-House Student project", title: "Under Graduate Form 1" },
   { id: "UG_2", path: "ug2", category: "UG2 In-House Interdisciplinary projects", title: "Under Graduate Form 2" },
   { id: "UG_3_A", path : "ug3a", category: "UG3 Participation in Project Competition", title: "Under Graduate Form 3A" },
-  { id: "UG_3_B", path :"ug3b", category: "UG3 Participation in Reputed Conference", title: "Under Graduate Form 3B" },
-  { id: "PG_1", path :"pg1", category: "Professional Development Through Workshops/STTPs", title: "Post Graduate Form 1" },
-  { id: "PG_2_A", path :"pg2a" ,category: "PG2 Participation in Project Competition", title: "Post Graduate Form 2A" },
-  { id: "PG_2_B",path :"pg2b", category: "PG2 Participation in Reputed Conference", title: "Post Graduate Form 2B" },
-  { id: "R1", path :"r1" ,category: "Publication in Reputed Journals/Papers", title: "Research Form 1" }
+  { id: "UG_3_B", path : "ug3b", category: "UG3 Participation in Reputed Conference", title: "Under Graduate Form 3B" },
+  { id: "PG_1", path : "pg1", category: "Professional Development Through Workshops/STTPs", title: "Post Graduate Form 1" },
+  { id: "PG_2_A",path: "pg2a" , category: "PG2 Participation in Project Competition", title: "Post Graduate Form 2A" },
+  { id: "PG_2_B",path : "pg2b" , category: "PG2 Participation in Reputed Conference", title: "Post Graduate Form 2B" },
+  { id: "R1", path : "r1" , category: "Publication in Reputed Journals/Papers", title: "Research Form 1" }
 ];
 
 const Home = () => {
   const navigate = useNavigate();
+
+
   return (
     <>
     <Navbar /> 
@@ -33,7 +35,7 @@ const Home = () => {
                   <div key={form.id} className="form-card" onClick={() => navigate(`/home/${form.path}`)}>
                     <h3>{form.id}</h3>
                     <p>Category: {form.category}</p>
-                    <button className="fill-form-btn">Fill Form</button>
+                    <button className="fill-form-btn">Apply</button>
                   </div>
                 ))}
               </div>

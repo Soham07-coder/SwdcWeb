@@ -13,9 +13,9 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
     students: [],
     expenses: [],
     totalBudget: "",
-    groupLeaderSignature: null,
-    guideSignature: null,
-    uploadedFiles: [],
+    groupLeaderSignature: null, // Stored as File object
+    guideSignature: null,       // Stored as File object
+    uploadedFiles: [],          // Stored as array of File objects
     status: "pending",
     errorMessage: "",
     errors: {},
@@ -37,9 +37,13 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
         students: data.students || [],
         expenses: data.expenses || [],
         totalBudget: data.totalBudget || "",
-        groupLeaderSignature: data.groupLeaderSignature || null,
-        guideSignature: data.guideSignature || null,
-        uploadedFiles: data.uploadedFiles || [],
+        // For viewOnly, these will likely come as URLs or IDs, not File objects
+        groupLeaderSignature: data.groupLeaderSignatureId ? { url: `http://localhost:5000/api/ug2form/uploads/${data.groupLeaderSignatureId}` } : null,
+        guideSignature: data.guideSignatureId ? { url: `http://localhost:5000/api/ug2form/uploads/${data.guideSignatureId}` } : null,
+        uploadedFiles: (data.uploadedFilesIds || []).map(fileId => ({
+          url: `http://localhost:5000/api/ug2form/uploads/${fileId}`,
+          originalName: fileId, // You might want to fetch original name from metadata if available
+        })),
         status: data.status || "pending",
       };
     } else {
@@ -48,14 +52,26 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
   };
 
   const [formData, setFormData] = useState(getInitialFormData);
+  const [userRole, setUserRole] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [userMessage, setUserMessage] = useState(null);
 
   useEffect(() => {
+    const userString = localStorage.getItem("user");
+    if (userString) {
+      try {
+        const user = JSON.parse(userString);
+        setUserRole(user.role.toLowerCase().trim());
+      } catch (err) {
+        console.error("Failed to parse user data from local storage:", err);
+      }
+    }
+
     if (viewOnly && data) {
       setFormData(getInitialFormData());
     }
   }, [data, viewOnly]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [userMessage, setUserMessage] = useState(null);
+
   const handleBack = () => {
     window.history.back();
   };
@@ -80,7 +96,7 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
         if (!(guide.name || "").trim())
           errors[`guideName_${idx}`] = "Guide name is required.";
         if (!(guide.employeeCode || "").trim())
-          errors[`guideEmployeeCode_${idx}`] = "Guide employee code is required.";
+          errors[`guideEmployeeCode_${idx}`] = "Employee code is required.";
       });
     }
 
@@ -128,48 +144,43 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
       errors.totalBudget = "Total budget must be a positive number.";
     }
 
-    if (!viewOnly) {
+    // Validation for signatures and uploaded files only if not in viewOnly mode and user role is 'student'
+    if (!viewOnly && userRole === 'student') {
       const isValidSignature = (sig) => {
         if (!sig) return false;
-        if (sig instanceof File) {
-          return sig.type === "image/jpeg" && sig.size <= 5 * 1024 * 1024;
-        }
-        return sig.url || sig.name;
+        return sig instanceof File && sig.type.startsWith("image/") && sig.size <= 5 * 1024 * 1024;
       };
 
       if (!isValidSignature(formData.groupLeaderSignature)) {
-        errors.groupLeaderSignature = "Group leader signature must be a JPEG under 5MB.";
+        errors.groupLeaderSignature = "Group leader signature must be a JPEG/PNG under 5MB.";
       }
 
       if (!isValidSignature(formData.guideSignature)) {
-        errors.guideSignature = "Guide signature must be a JPEG under 5MB.";
+        errors.guideSignature = "Guide signature must be a JPEG/PNG under 5MB.";
       }
 
       const files = formData.uploadedFiles || [];
+      const pdfFiles = files.filter(f => f instanceof File && f.type === "application/pdf");
+      const zipFile = files.find(f => f instanceof File && (f.type.includes("zip") || f.name?.toLowerCase().endsWith(".zip")));
+
       if (files.length === 0) {
-        errors.uploadedFiles = "At least one additional document is required.";
-      } else if (files.length <= 5) {
-        files.forEach((file, idx) => {
-          if (file instanceof File) {
-            if (!file.type || file.type !== "application/pdf") {
-              errors[`uploadedFile_${idx}`] = `File "${file.name}" must be a PDF.`;
-            }
-            if (!file.size || file.size > 5 * 1024 * 1024) {
-              errors[`uploadedFile_${idx}`] = `File "${file.name}" must be under 5MB.`;
-            }
+        errors.uploadedFiles = "At least one additional document is required (PDF or ZIP).";
+      } else if (pdfFiles.length > 5) {
+        errors.uploadedFiles = "Maximum of 5 PDF files allowed.";
+      } else if (zipFile && files.length > 1) {
+          // If a ZIP is present, and there are other files (Pdfs), it's invalid unless it's just the ZIP.
+          // This handles cases like [zip, pdf1], [pdf1, zip]
+          if(files.length > 1 || pdfFiles.length > 0) {
+            errors.uploadedFiles = "If a ZIP file is uploaded, no other files (PDFs) are allowed.";
           }
-        });
+      } else if (zipFile && zipFile.size > 25 * 1024 * 1024) {
+        errors.uploadedFiles = `ZIP file "${zipFile.name}" exceeds 25MB.`;
       } else {
-        if (files.length !== 1) {
-          errors.uploadedFiles = "If more than 5 files, upload exactly one ZIP archive.";
-        } else {
-          const file = files[0];
-          const isZip = file.type.includes("zip") || file.name?.endsWith(".zip");
-          const isUnder25MB = file.size <= 25 * 1024 * 1024;
-          if (!isZip) {
-            errors.uploadedFiles = "The file must be a ZIP archive.";
-          } else if (!isUnder25MB) {
-            errors.uploadedFiles = "ZIP file must be under 25MB.";
+        // Validate individual PDFs if no ZIP is present or only ZIP is present and valid
+        for (const file of pdfFiles) {
+          if (file.size > 5 * 1024 * 1024) {
+            errors.uploadedFiles = `PDF "${file.name}" exceeds 5MB.`;
+            break;
           }
         }
       }
@@ -189,6 +200,10 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
     setFormData((prev) => ({
       ...prev,
       uploadedFiles: updated,
+      errors: {
+        ...prev.errors,
+        uploadedFiles: undefined, // Clear general file error on removal
+      }
     }));
   };
 
@@ -197,14 +212,13 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
     setFormData((prev) => {
       const updatedGuides = [...prev.guideDetails];
       updatedGuides[index] = { ...updatedGuides[index], [field]: value };
-
       return {
         ...prev,
         guideDetails: updatedGuides,
         errors: {
           ...prev.errors,
-          [`guide${field === "name" ? "Name" : "EmployeeCode"}_${index}`]: "", // clear error
-        }
+          [`guide${field === "name" ? "Name" : "EmployeeCode"}_${index}`]: "",
+        },
       };
     });
   };
@@ -220,11 +234,9 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
     setFormData((prev) => {
       const updatedGuides = [...prev.guideDetails];
       updatedGuides.splice(index, 1);
-
       const updatedErrors = { ...prev.errors };
       delete updatedErrors[`guideName_${index}`];
       delete updatedErrors[`guideEmployeeCode_${index}`];
-
       return {
         ...prev,
         guideDetails: updatedGuides,
@@ -232,6 +244,7 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
       };
     });
   };
+
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData({
@@ -256,11 +269,8 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
   const updateExpenseField = (e, index, field) => {
     const updatedExpenses = [...formData.expenses];
     const value = e.target.value;
-
-    // If updating amount, store it as raw string but validate later
     updatedExpenses[index][field] = field === "amount" ? value.replace(/[^0-9.]/g, "") : value.trim();
-
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       expenses: updatedExpenses,
     }));
@@ -274,111 +284,84 @@ const UGForm2 = ({ viewOnly = false, data = null }) => {
 
   const handleFileUpload = (e) => {
     const selectedFiles = Array.from(e.target.files);
-    const currentFiles = [...formData.uploadedFiles];
+    setFormData(prev => {
+      const newFiles = [...prev.uploadedFiles];
+      let error = "";
 
-    let pdfCount = currentFiles.filter(file =>
-      file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf")
-    ).length;
+      for (const file of selectedFiles) {
+        const isPdf = file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf");
+        const isZip = file.type === "application/zip" || file.name?.toLowerCase().endsWith(".zip");
 
-    const zipExists = currentFiles.some(file =>
-      file.type === "application/zip" || file.name?.toLowerCase().endsWith(".zip")
-    );
+        if (!isPdf && !isZip) {
+          error = "Only PDF and ZIP files are allowed.";
+          break;
+        }
 
-    const newFiles = [];
-    let error = "";
+        if (isZip) {
+          // If a ZIP is being uploaded, clear existing files and add only the ZIP
+          newFiles.splice(0, newFiles.length, file); // Replace all files with this ZIP
+          if (file.size > 25 * 1024 * 1024) {
+             error = `ZIP "${file.name}" exceeds 25MB.`;
+          }
+          break; // Only one ZIP is allowed, and it replaces others
+        } else if (isPdf) {
+          // If PDF, check current count and add
+          const currentPdfs = newFiles.filter(f => f instanceof File && (f.type === "application/pdf" || f.name?.toLowerCase().endsWith(".pdf"))).length;
+          const currentZips = newFiles.filter(f => f instanceof File && (f.type.includes("zip") || f.name?.toLowerCase().endsWith(".zip"))).length;
 
-    for (const file of selectedFiles) {
-      const isPdf = file.type === "application/pdf" || file.name?.toLowerCase().endsWith(".pdf");
-      const isZip = file.type === "application/zip" || file.name?.toLowerCase().endsWith(".zip");
-
-      if (!isPdf && !isZip) {
-        error = "Only PDF and ZIP files are allowed.";
-        break;
+          if(currentZips > 0) { // If there's already a ZIP, no PDFs allowed
+              error = "Cannot upload PDFs when a ZIP file is already present.";
+              break;
+          }
+          if (currentPdfs >= 5) {
+            error = "Maximum of 5 PDF files allowed.";
+            break;
+          }
+          if (file.size > 5 * 1024 * 1024) {
+            error = `PDF "${file.name}" exceeds 5MB.`;
+            break;
+          }
+          newFiles.push(file);
+        }
       }
 
-      if (isPdf) {
-        if (pdfCount >= 5) {
-          error = "Maximum of 5 PDF files allowed.";
-          break;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          error = `PDF "${file.name}" exceeds 5MB.`;
-          break;
-        }
-        pdfCount++;
-        newFiles.push(file);
+      if (error) {
+        return {
+          ...prev,
+          errors: {
+            ...prev.errors,
+            uploadedFiles: error,
+          },
+        };
       }
 
-      if (isZip) {
-        const newZipAlready = newFiles.some(
-          f => f.type === "application/zip" || f.name?.toLowerCase().endsWith(".zip")
-        );
-        if (zipExists || newZipAlready) {
-          error = "Only one ZIP file is allowed.";
-          break;
-        }
-        if (file.size > 25 * 1024 * 1024) {
-          error = `ZIP "${file.name}" exceeds 25MB.`;
-          break;
-        }
-        newFiles.push(file);
-      }
-    }
-
-    if (error) {
-      setFormData(prev => ({
+      return {
         ...prev,
+        uploadedFiles: newFiles,
         errors: {
           ...prev.errors,
-          uploadedFiles: error,
+          uploadedFiles: undefined,
         },
-      }));
-      return;
-    }
-
-    setFormData(prev => ({
-      ...prev,
-      uploadedFiles: [...prev.uploadedFiles, ...newFiles],  // Contains both PDFs and ZIP (max 5 PDFs, 1 ZIP)
-      errors: {
-        ...prev.errors,
-        uploadedFiles: undefined,
-      },
-    }));
+      };
+    });
   };
 
+  const handleSignatureUpload = (e, signatureType) => {
+    const file = e.target.files[0];
+    if (file && (file.type === "image/jpeg" || file.type === "image/png")) { // Allow PNG too
+      setFormData((prev) => ({
+        ...prev,
+        [signatureType]: file,
+        errors: { ...prev.errors, [signatureType]: null },
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        errors: { ...prev.errors, [signatureType]: "Only JPEG or PNG image files are allowed." },
+      }));
+    }
+  };
 
- const handleGroupLeaderSignatureUpload = (e) => {
-  const file = e.target.files[0];
-  if (file && file.type.startsWith("image/")) {
-    setFormData((prev) => ({
-      ...prev,
-      groupLeaderSignature: file,
-      errors: { ...prev.errors, groupLeaderSignature: null },
-    }));
-  } else {
-    setFormData((prev) => ({
-      ...prev,
-      errors: { ...prev.errors, groupLeaderSignature: "Only image files are allowed." },
-    }));
-  }
-};
-
-const handleGuideSignatureUpload = (e) => {
-  const file = e.target.files[0];
-  if (file && file.type.startsWith("image/")) {
-    setFormData((prev) => ({
-      ...prev,
-      guideSignature: file,
-      errors: { ...prev.errors, guideSignature: null },
-    }));
-  } else {
-    setFormData((prev) => ({
-      ...prev,
-      errors: { ...prev.errors, guideSignature: "Only image files are allowed." },
-    }));
-  }
-};
-  
   const addStudentRow = () => {
     setFormData({
       ...formData,
@@ -392,7 +375,7 @@ const handleGuideSignatureUpload = (e) => {
   const addExpenseRow = () => {
     setFormData({
       ...formData,
-      expenses: [...formData.expenses, { category: "", amount: "" }],
+      expenses: [...formData.expenses, { category: "", amount: "", details: "" }],
     });
   };
 
@@ -411,8 +394,9 @@ const handleGuideSignatureUpload = (e) => {
       try {
         const user = JSON.parse(userString);
         svvNetId = user.svvNetId;
+        setUserRole(user.role);
       } catch (err) {
-        setUserMessage({ text: "User session corrupted.", type: "error" });
+        setUserMessage({ text: "User session corrupted. Please log in.", type: "error" });
         return;
       }
     }
@@ -422,101 +406,88 @@ const handleGuideSignatureUpload = (e) => {
       return;
     }
 
+    // Restrict submission if not a student and not in viewOnly mode
+    if (userRole !== 'student' && !viewOnly) {
+      setUserMessage({ text: "You do not have permission to submit this form.", type: "error" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setUserMessage(null); // Clear previous messages
+
     try {
-      // STEP 1: Submit base form data
-      const formPayload = {
-        svvNetId,
-        projectTitle: formData.projectTitle?.trim() || "",
-        projectDescription: formData.projectDescription?.trim() || "",
-        utility: formData.utility?.trim() || "",
-        receivedFinance: formData.receivedFinance,
-        financeDetails: formData.financeDetails?.trim() || "",
-        totalBudget: formData.totalBudget,
-        status: formData.status?.trim() || "",
-        guideDetails: formData.guideDetails
+      const dataToSend = new FormData();
+      dataToSend.append("svvNetId", svvNetId);
+      dataToSend.append("projectTitle", formData.projectTitle?.trim() || "");
+      dataToSend.append("projectDescription", formData.projectDescription?.trim() || "");
+      dataToSend.append("utility", formData.utility?.trim() || "");
+      dataToSend.append("receivedFinance", formData.receivedFinance);
+      if (formData.receivedFinance) {
+        dataToSend.append("financeDetails", formData.financeDetails?.trim() || "");
+      }
+      dataToSend.append("totalBudget", formData.totalBudget);
+
+      // Stringify complex arrays/objects before appending to FormData
+      dataToSend.append("guideDetails", JSON.stringify(
+        formData.guideDetails
           .filter(g => g.name?.trim() && g.employeeCode?.trim())
           .map(g => ({
             name: g.name.trim(),
             employeeCode: g.employeeCode.trim(),
-          })),
-        students: formData.students,
-        expenses: formData.expenses
+          }))
+      ));
+      dataToSend.append("students", JSON.stringify(formData.students));
+      dataToSend.append("expenses", JSON.stringify(
+        formData.expenses
           .filter(exp => exp.category?.trim())
           .map(exp => ({
             category: exp.category.trim(),
             amount: parseFloat(exp.amount) || 0,
             details: exp.details?.trim() || "",
-          })),
-      };
+          }))
+      ));
+
+      // Append files if they are File objects
+      if (formData.groupLeaderSignature instanceof File) {
+        dataToSend.append("groupLeaderSignature", formData.groupLeaderSignature);
+      }
+      if (formData.guideSignature instanceof File) {
+        dataToSend.append("guideSignature", formData.guideSignature);
+      }
+      formData.uploadedFiles.forEach((file, index) => {
+        if (file instanceof File) {
+          dataToSend.append(`uploadedFiles`, file); // Append each file with the same field name
+        }
+      });
+
+      // Status can be set on backend, or passed from frontend if needed
+      // dataToSend.append("status", formData.status?.trim() || "pending");
 
       const saveRes = await axios.post(
         "http://localhost:5000/api/ug2form/saveFormData",
-        formPayload
+        dataToSend,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data", // Axois usually sets this, but explicit is fine
+          },
+        }
       );
 
-      if (!saveRes.data?.formId) {
+      if (!saveRes.data?.id) {
         throw new Error("Form save failed or no form ID returned.");
       }
 
-      const formId = saveRes.data.formId;
+      const formId = saveRes.data.id; // Backend returns 'id', not 'formId' now
       console.log("✅ Form saved with ID:", formId);
 
-      // STEP 2: Upload PDF files
-      const uploadedFiles = formData.uploadedFiles.filter(f => f instanceof File);
-      const pdfFiles = uploadedFiles.filter(f => f.type === "application/pdf");
-      const zipFile = uploadedFiles.find(f => f.name.toLowerCase().endsWith(".zip"));
-
-      for (let pdf of pdfFiles) {
-        const pdfForm = new FormData();
-        pdfForm.append("pdf", pdf);
-
-        await axios.post(
-          `http://localhost:5000/api/ug2form/uploadPDF/${formId}`,
-          pdfForm,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-      }
-
-      // STEP 3: Upload ZIP file (if any)
-      if (zipFile) {
-        const zipForm = new FormData();
-        zipForm.append("zip", zipFile);
-
-        await axios.post(
-          `http://localhost:5000/api/ug2form/uploadZip/${formId}`,
-          zipForm,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-      }
-
-      // STEP 4: Upload signatures
-      const uploadSignature = async (file, type) => {
-        const sigForm = new FormData();
-        sigForm.append("sig", file);
-
-        await axios.post(
-          `http://localhost:5000/api/ug2form/uploadSignature/${formId}/${type}`,
-          sigForm,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-      };
-
-      if (formData.groupLeaderSignature instanceof File) {
-        await uploadSignature(formData.groupLeaderSignature, "groupLeader");
-      }
-
-      if (formData.guideSignature instanceof File) {
-        await uploadSignature(formData.guideSignature, "guide");
-      }
-
-      // STEP 5: Done 🎉
-      alert(`✅ Form submitted successfully!\nSubmission ID: ${formId}`);
+      setUserMessage({ text: `✅ Form submitted successfully!\nSubmission ID: ${formId}`, type: "success" });
       setFormData(initialState); // Clear form
-      setUserMessage(null);
-
     } catch (error) {
       console.error("❌ Submission error:", error);
-      alert("❌ An error occurred during submission.");
+      const errorMessage = error.response?.data?.message || "An error occurred during submission.";
+      setUserMessage({ text: `❌ ${errorMessage}`, type: "error" });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -525,13 +496,18 @@ const handleGuideSignatureUpload = (e) => {
       <h2>Under Graduate Form 2</h2>
       {viewOnly && data && data.id && <p className="submission-id">Submission ID: {data.id}</p>}
       <p className="form-category">Interdisciplinary Projects (FY to LY Students)</p>
+      {userMessage && (
+        <p className={`user-message ${userMessage.type === "error" ? "error" : "success"}`}>
+          {userMessage.text}
+        </p>
+      )}
       <form onSubmit={handleSubmit}>
         <label>Title of Proposed Project:</label>
         <input
           type="text"
           name="projectTitle"
           value={formData.projectTitle}
-          disabled={viewOnly}
+          disabled={viewOnly || userRole !== 'student'}
           onChange={handleInputChange}
         />
         {formData.errors.projectTitle && <p className="error-message">{formData.errors.projectTitle}</p>}
@@ -539,7 +515,7 @@ const handleGuideSignatureUpload = (e) => {
         <label>Brief Description of Proposed Work:</label>
         <textarea
           name="projectDescription"
-          disabled={viewOnly}
+          disabled={viewOnly || userRole !== 'student'}
           placeholder="Attach a separate sheet if required"
           value={formData.projectDescription}
           onChange={handleInputChange}
@@ -550,7 +526,7 @@ const handleGuideSignatureUpload = (e) => {
         <input
           type="text"
           name="utility"
-          disabled={viewOnly}
+          disabled={viewOnly || userRole !== 'student'}
           value={formData.utility}
           onChange={handleInputChange}
         />
@@ -564,7 +540,7 @@ const handleGuideSignatureUpload = (e) => {
             name="receivedFinance"
             checked={formData.receivedFinance === true}
             onChange={() => setFormData({ ...formData, receivedFinance: true, errors: { ...formData.errors, financeDetails: null } })}
-            disabled={viewOnly}
+            disabled={viewOnly || userRole !== 'student'}
           />
           <label htmlFor="yes">Yes</label>
 
@@ -574,7 +550,7 @@ const handleGuideSignatureUpload = (e) => {
             name="receivedFinance"
             checked={formData.receivedFinance === false}
             onChange={() => setFormData({ ...formData, receivedFinance: false, errors: { ...formData.errors, financeDetails: null } })}
-            disabled={viewOnly}
+            disabled={viewOnly || userRole !== 'student'}
           />
           <label htmlFor="no">No</label>
         </div>
@@ -582,7 +558,7 @@ const handleGuideSignatureUpload = (e) => {
         <label>Details if Yes:</label>
         <textarea
           name="financeDetails"
-          disabled={viewOnly || !formData.receivedFinance}
+          disabled={viewOnly || !formData.receivedFinance || userRole !== 'student'}
           value={formData.financeDetails}
           onChange={handleInputChange}
         />
@@ -595,7 +571,7 @@ const handleGuideSignatureUpload = (e) => {
                 <th>Sr. No.</th>
                 <th>Name of Guide/Co-Guide</th>
                 <th>Employee Code</th>
-                {!viewOnly && <th>Action</th>}
+                {(!viewOnly && userRole === 'student') && <th>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -607,9 +583,9 @@ const handleGuideSignatureUpload = (e) => {
                       type="text"
                       value={guide.name}
                       onChange={(e) => updateGuideField(e, index, "name")}
-                      disabled={viewOnly}
+                      disabled={viewOnly || userRole !== 'student'}
                     />
-                    {!viewOnly && formData.errors[`guideName_${index}`] && (
+                    {(!viewOnly && userRole === 'student') && formData.errors[`guideName_${index}`] && (
                       <p className="error-message">{formData.errors[`guideName_${index}`]}</p>
                     )}
                   </td>
@@ -618,13 +594,13 @@ const handleGuideSignatureUpload = (e) => {
                       type="text"
                       value={guide.employeeCode}
                       onChange={(e) => updateGuideField(e, index, "employeeCode")}
-                      disabled={viewOnly}
+                      disabled={viewOnly || userRole !== 'student'}
                     />
-                    {!viewOnly && formData.errors[`guideEmployeeCode_${index}`] && (
+                    {(!viewOnly && userRole === 'student') && formData.errors[`guideEmployeeCode_${index}`] && (
                       <p className="error-message">{formData.errors[`guideEmployeeCode_${index}`]}</p>
                     )}
                   </td>
-                  {!viewOnly && (
+                  {(!viewOnly && userRole === 'student') && (
                     <td>
                       <button
                         type="button"
@@ -644,7 +620,7 @@ const handleGuideSignatureUpload = (e) => {
             <p className="error-message">{formData.errors.guideDetails}</p>
           )}
 
-          {!viewOnly && (
+          {(!viewOnly && userRole === 'student') && (
             <button
               type="button"
               className="add-btn"
@@ -666,7 +642,7 @@ const handleGuideSignatureUpload = (e) => {
               <th>Branch</th>
               <th>Roll No.</th>
               <th>Mobile No.</th>
-              {!viewOnly && <th>Action</th>}
+              {(!viewOnly && userRole === 'student') && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -678,9 +654,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.name}
                     onChange={(e) => updateStudentField(e, index, "name")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentName_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentName_${index}`] && (
                     <p className="error-message">{formData.errors[`studentName_${index}`]}</p>
                   )}
                 </td>
@@ -689,9 +665,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.year}
                     onChange={(e) => updateStudentField(e, index, "year")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentYear_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentYear_${index}`] && (
                     <p className="error-message">{formData.errors[`studentYear_${index}`]}</p>
                   )}
                 </td>
@@ -700,9 +676,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.class}
                     onChange={(e) => updateStudentField(e, index, "class")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentClass_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentClass_${index}`] && (
                     <p className="error-message">{formData.errors[`studentClass_${index}`]}</p>
                   )}
                 </td>
@@ -711,9 +687,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.div}
                     onChange={(e) => updateStudentField(e, index, "div")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentDiv_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentDiv_${index}`] && (
                     <p className="error-message">{formData.errors[`studentDiv_${index}`]}</p>
                   )}
                 </td>
@@ -722,9 +698,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.branch}
                     onChange={(e) => updateStudentField(e, index, "branch")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentBranch_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentBranch_${index}`] && (
                     <p className="error-message">{formData.errors[`studentBranch_${index}`]}</p>
                   )}
                 </td>
@@ -733,9 +709,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.rollNo}
                     onChange={(e) => updateStudentField(e, index, "rollNo")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentRollNo_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentRollNo_${index}`] && (
                     <p className="error-message">{formData.errors[`studentRollNo_${index}`]}</p>
                   )}
                 </td>
@@ -744,13 +720,13 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={student.mobileNo}
                     onChange={(e) => updateStudentField(e, index, "mobileNo")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`studentMobileNo_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`studentMobileNo_${index}`] && (
                     <p className="error-message">{formData.errors[`studentMobileNo_${index}`]}</p>
                   )}
                 </td>
-                {!viewOnly && (
+                {(!viewOnly && userRole === 'student') && (
                     <td>
                         <button type="button" className="remove-btn" onClick={() => removeStudentRow(index)}>
                         ❌
@@ -762,7 +738,7 @@ const handleGuideSignatureUpload = (e) => {
           </tbody>
         </table>
         {formData.errors.students && <p className="error-message">{formData.errors.students}</p>}
-        {!viewOnly && (
+        {(!viewOnly && userRole === 'student') && (
           <button type="button" className="add-btn" onClick={addStudentRow}>
             ➕ Add More Student
           </button>
@@ -774,7 +750,7 @@ const handleGuideSignatureUpload = (e) => {
               <th>Expense Category</th>
               <th>Amount</th>
               <th>Details</th>
-              {!viewOnly && <th>Action</th>}
+              {(!viewOnly && userRole === 'student') && <th>Action</th>}
             </tr>
           </thead>
           <tbody>
@@ -785,9 +761,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={expense.category}
                     onChange={(e) => updateExpenseField(e, index, "category")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`expenseCategory_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`expenseCategory_${index}`] && (
                     <p className="error-message">{formData.errors[`expenseCategory_${index}`]}</p>
                   )}
                 </td>
@@ -796,9 +772,9 @@ const handleGuideSignatureUpload = (e) => {
                     type="text"
                     value={expense.amount}
                     onChange={(e) => updateExpenseField(e, index, "amount")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
-                  {!viewOnly && formData.errors[`expenseAmount_${index}`] && (
+                  {(!viewOnly && userRole === 'student') && formData.errors[`expenseAmount_${index}`] && (
                     <p className="error-message">{formData.errors[`expenseAmount_${index}`]}</p>
                   )}
                 </td>
@@ -806,10 +782,10 @@ const handleGuideSignatureUpload = (e) => {
                   <textarea
                     value={expense.details}
                     onChange={(e) => updateExpenseField(e, index, "details")}
-                    disabled={viewOnly}
+                    disabled={viewOnly || userRole !== 'student'}
                   />
                 </td>
-                {!viewOnly && (
+                {(!viewOnly && userRole === 'student') && (
                     <td>
                         <button type="button" className="remove-btn" onClick={() => removeExpenseRow(index)}>
                         ❌
@@ -820,7 +796,7 @@ const handleGuideSignatureUpload = (e) => {
             ))}
           </tbody>
         </table>
-        {!viewOnly && (
+        {(!viewOnly && userRole === 'student') && (
           <button type="button" className="add-btn" onClick={addExpenseRow}>
             ➕ Add More Expense
           </button>
@@ -829,7 +805,7 @@ const handleGuideSignatureUpload = (e) => {
         <label>Total Budget (Including Contingency Amount):</label>
         <input
           type="text"
-          disabled={viewOnly}
+          disabled={viewOnly || userRole !== 'student'}
           name="totalBudget"
           value={formData.totalBudget}
           onChange={handleInputChange}
@@ -837,92 +813,103 @@ const handleGuideSignatureUpload = (e) => {
         {formData.errors.totalBudget && <p className="error-message">{formData.errors.totalBudget}</p>}
 
         {/* Signatures */}
-      <div className="signatures">
-        <div>
-          <label>Signature of Group Leader (JPEG Only)</label>
-          {!viewOnly && (
-            <input
-              type="file"
-              accept=".jpeg,.jpg,image/jpeg,image/jpg"
-              name="groupLeaderSignature"
-              onChange={handleGroupLeaderSignatureUpload}
-              disabled={viewOnly}
-            />
-          )}
-          {viewOnly && formData.groupLeaderSignature?.url ? (
-            <img
-              src={formData.groupLeaderSignature.url}
-              alt="Group Leader Signature"
-              className="signature-display"
-            />
-          ) : formData.groupLeaderSignature?.name ? (
-            <p className="file-name">{formData.groupLeaderSignature.name}</p>
-          ) : null}
-          {!viewOnly && formData.errors.groupLeaderSignature && (
-            <p className="error-message">{formData.errors.groupLeaderSignature}</p>
-          )}
+        <div className="signatures">
+          <div>
+            <label>Signature of Group Leader (JPEG/PNG Only)</label>
+            {(!viewOnly && userRole === 'student') && (
+              <input
+                type="file"
+                accept=".jpeg,.jpg,.png,image/jpeg,image/png"
+                name="groupLeaderSignature"
+                onChange={(e) => handleSignatureUpload(e, "groupLeaderSignature")}
+                disabled={viewOnly || userRole !== 'student'}
+              />
+            )}
+            {/* MODIFIED CONDITION HERE for Group Leader Signature */}
+            {(viewOnly && userRole !== 'student') && formData.groupLeaderSignature?.url ? (
+              <a
+                href={formData.groupLeaderSignature.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="signature-link"
+              >
+                View Group Leader Signature
+              </a>
+            ) : formData.groupLeaderSignature instanceof File ? (
+              <p className="file-name">{formData.groupLeaderSignature.name}</p>
+            ) : null}
+            {(!viewOnly && userRole === 'student') && formData.errors.groupLeaderSignature && (
+              <p className="error-message">{formData.errors.groupLeaderSignature}</p>
+            )}
+          </div>
+
+          <div>
+            <label>Signature of Guide (JPEG/PNG Only)</label>
+            {(!viewOnly && userRole === 'student') && (
+              <input
+                type="file"
+                accept=".jpeg,.jpg,.png,image/jpeg,image/png"
+                name="guideSignature"
+                onChange={(e) => handleSignatureUpload(e, "guideSignature")}
+                disabled={viewOnly || userRole !== 'student'}
+              />
+            )}
+            {/* MODIFIED CONDITION HERE for Guide Signature */}
+            {(viewOnly && userRole !== 'student') && formData.guideSignature?.url ? (
+              <a
+                href={formData.guideSignature.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="signature-link"
+              >
+                View Guide Signature
+              </a>
+            ) : formData.guideSignature instanceof File ? (
+              <p className="file-name">{formData.guideSignature.name}</p>
+            ) : null}
+            {(!viewOnly && userRole === 'student') && formData.errors.guideSignature && (
+              <p className="error-message">{formData.errors.guideSignature}</p>
+            )}
+          </div>
         </div>
 
-        <div>
-          <label>Signature of Guide (JPEG Only)</label>
-          {!viewOnly && (
-            <input
-              type="file"
-              accept=".jpeg,.jpg,image/jpeg,image/jpg"
-              name="guideSignature"
-              onChange={handleGuideSignatureUpload}
-              disabled={viewOnly}
-            />
-          )}
-          {viewOnly && formData.guideSignature?.url ? (
-            <img
-              src={formData.guideSignature.url}
-              alt="Guide Signature"
-              className="signature-display"
-            />
-          ) : formData.guideSignature?.name ? (
-            <p className="file-name">{formData.guideSignature.name}</p>
-          ) : null}
-          {!viewOnly && formData.errors.guideSignature && (
-            <p className="error-message">{formData.errors.guideSignature}</p>
-          )}
-        </div>
-      </div>
         <label>
           Upload Additional Documents (Max 5 PDF files, 5MB each OR one ZIP file up to 25MB):
         </label>
-          {!viewOnly && (
+        {(!viewOnly && userRole === 'student') && (
           <input
             type="file"
             accept=".pdf,application/pdf,.zip,application/zip,application/x-zip-compressed"
             multiple
             name="uploadedFiles"
             onChange={handleFileUpload}
-            disabled={viewOnly}
+            disabled={viewOnly || userRole !== 'student'}
           />
         )}
-        {formData.uploadedFiles.length > 0 && (
+        {formData.uploadedFiles.length > 0 && !(viewOnly && userRole === 'student') && (
           <div className="uploaded-files-list">
             <h4>Uploaded Files:</h4>
             <ul>
               {formData.uploadedFiles.map((file, index) => {
-                const fileName = file.name || file.originalName || "Unnamed";
-                const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                const fileName = file.name || file.originalName || `File ${index + 1}`;
+                const fileSize = file instanceof File ? file.size : 0;
+                const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : "N/A";
 
                 return (
                   <li key={index}>
-                    {viewOnly && file.url ? (
+                    {/* MODIFIED CONDITION HERE for Uploaded Files */}
+                    {(viewOnly && userRole !== 'student') && file.url ? (
                       <a
                         href={file.url}
                         target="_blank"
                         rel="noopener noreferrer"
                       >
-                        {fileName} ({file.mimetype}, {fileSizeMB} MB)
+                        {fileName} ({fileSizeMB} MB)
                       </a>
                     ) : (
                       <>
                         {fileName} ({fileSizeMB} MB)
-                        {!viewOnly && (
+                        {(!viewOnly && userRole === 'student') && (
                           <button
                             type="button"
                             className="remove-file-btn"
@@ -934,7 +921,7 @@ const handleGuideSignatureUpload = (e) => {
                       </>
                     )}
 
-                    {!viewOnly && formData.errors[`uploadedFile_${index}`] && (
+                    {(!viewOnly && userRole !== 'student') && formData.errors[`uploadedFile_${index}`] && (
                       <p className="error-message">
                         {formData.errors[`uploadedFile_${index}`]}
                       </p>
@@ -947,9 +934,9 @@ const handleGuideSignatureUpload = (e) => {
         )}
 
         {/* General error for uploadedFiles (e.g., if more than 5 files are not a single zip) */}
-        {!viewOnly && formData.errors.uploadedFiles && <p className="error-message">{formData.errors.uploadedFiles}</p>}
+        {(!viewOnly && userRole === 'student') && formData.errors.uploadedFiles && <p className="error-message">{formData.errors.uploadedFiles}</p>}
         <button type="button" className="back-btn" onClick={handleBack} disabled={isSubmitting}>Back</button>
-        {!viewOnly && (
+        {(!viewOnly && userRole === 'student') && (
           <button type="submit" disabled={isSubmitting} className="submit-btn">
             {isSubmitting ? "Submitting..." : "Submit"}
           </button>

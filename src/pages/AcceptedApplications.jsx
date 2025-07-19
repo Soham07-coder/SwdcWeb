@@ -1,7 +1,11 @@
+// StudentAccepted.js
 import React, { useEffect, useState } from "react";
+import Navbar from "../components/Navbar";
+import Sidebar from "../components/Sidebar";
+import "../components/styles/facPending.css";
 import { useNavigate } from "react-router-dom";
 
-const AcceptedApplications = () => {
+const AcceeptedApplications = () => {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -66,7 +70,6 @@ const AcceptedApplications = () => {
         setLoading(false);
       }
     };
-
     fetchApplications();
   }, []);
 
@@ -93,26 +96,26 @@ const AcceptedApplications = () => {
 
   if (loading) return <div className="p-6">Loading accepted applications...</div>;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
-
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h2 className="text-2xl font-semibold mb-4">Accepted Applications</h2>
-      <p className="text-gray-600 mb-6">
-        These applications have been reviewed and approved by the committee.
-      </p>
-      <div className="overflow-x-auto bg-white rounded shadow">
-        <table className="w-full border text-left">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3 border">Topic</th>
-              <th className="p-3 border">Name</th>
-              <th className="p-3 border">Submitted</th>
-              <th className="p-3 border">Branch</th>
-              <th className="p-3 border">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {applications.length === 0 ? (
+    <div className="main-wrapper">
+      <Navbar />
+      <Sidebar />
+      <div className="page-wrapper">
+        <div className="content-area">
+          <h2 className="page-title">Accepted Applications</h2>
+          <div className="table-wrapper">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th className="p-3 border">Topic</th>
+                  <th className="p-3 border">Name</th>
+                  <th className="p-3 border">Submitted</th>
+                  <th className="p-3 border">Branch</th>
+                  <th className="p-3 border">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {applications.length === 0 ? (
               <tr>
                 <td colSpan="5" className="text-center text-gray-500 py-4">
                   No accepted applications found.
@@ -138,11 +141,13 @@ const AcceptedApplications = () => {
                 </tr>
               ))
             )}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-export default AcceptedApplications;
+export default AcceeptedApplications;

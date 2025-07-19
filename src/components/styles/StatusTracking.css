@@ -1,0 +1,217 @@
+/* Main Layout */
+.status-tracking-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.status-tracking-content {
+  padding: 2rem;
+  max-width: 72rem;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Application Info Section */
+.status-app-info {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  border: 1px solid #e2e8f0;
+}
+
+.status-app-info h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #1a202c;
+}
+
+.status-info-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .status-info-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.status-info-item {
+  color: #4a5568;
+}
+
+.status-info-item strong {
+  color: #2d3748;
+  font-weight: 600;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-approved {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-rejected {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-processing {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* Timeline Section */
+.status-timeline {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 1.5rem;
+  border: 1px solid #e2e8f0;
+}
+
+.status-timeline h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: #1a202c;
+}
+
+.timeline-container {
+  position: relative;
+  border-left: 2px solid #e2e8f0;
+  margin-left: 1rem;
+  padding-left: 1.5rem;
+}
+
+.timeline-item {
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: flex-start;
+}
+
+.timeline-dot {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  background-color: #3b82f6;
+  border-radius: 9999px;
+  left: -0.5rem;
+  top: 0;
+  margin-top: 0.375rem;
+  border: 2px solid white;
+}
+
+.timeline-content {
+  flex-grow: 1;
+}
+
+.timeline-date {
+  font-size: 0.875rem;
+  color: #718096;
+}
+
+.timeline-status {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-top: 0.25rem;
+  color: #1a202c;
+  text-transform: capitalize;
+}
+
+.timeline-details {
+  color: #4a5568;
+  margin-top: 0.25rem;
+}
+
+.timeline-changedby {
+  font-size: 0.75rem;
+  color: #718096;
+  margin-top: 0.125rem;
+}
+
+/* Documents List */
+.documents-list {
+  list-style-type: disc;
+  list-style-position: inside;
+  margin-top: 1rem;
+}
+
+.document-link {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.document-link:hover {
+  color: #2563eb;
+}
+
+/* Buttons */
+.status-back-button {
+  background-color: #4a5568;
+  color: white;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-top: 2rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.status-back-button:hover {
+  background-color: #2d3748;
+}
+
+/* Loading and Error States */
+.status-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  color: #4a5568;
+  font-size: 1.125rem;
+}
+
+.status-error {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  color: #e53e3e;
+  font-size: 1.125rem;
+}
+
+.status-error-button {
+  background-color: #4299e1;
+  color: white;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  margin-top: 1rem;
+  cursor: pointer;
+}
+
+.status-error-button:hover {
+  background-color: #3182ce;
+}

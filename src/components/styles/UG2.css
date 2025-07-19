@@ -1,97 +1,377 @@
+/* Form Styles - Red, White & Gray Theme */
 .form-container {
-    max-width: 800px;
-    margin: auto;
-    padding: 20px;
-    background: #f9f9f9;
-    border-radius: 8px;
-    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
-  }
-  
-  h2 {
-    text-align: center;
-    color: #333;
-  }
-  
-  label {
-    font-weight: bold;
-    display: block;
-    margin: 10px 0 5px;
-  }
-  
-  input, textarea {
-    width: 100%; /* Ensures it fits within the table cell */
-    padding: 6px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 14px;
-    box-sizing: border-box; /* Ensures padding doesn't increase width */
-  }
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+  position: relative;
+  overflow: hidden;
+}
 
-  textarea {
-    height: 60px;
-    resize: vertical; /* Allow resizing but keep within bounds */
-    overflow: hidden;
+.form-container::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  background: linear-gradient(to bottom, #d32f2f, #b71c1c);
+}
+
+h2 {
+  color: #424242;
+  margin-bottom: 1.5rem;
+  font-size: 2rem;
+  position: relative;
+  padding-bottom: 0.5rem;
+}
+
+h2::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(to right, #d32f2f, #b71c1c);
+  border-radius: 2px;
+}
+
+.form-category {
+  font-size: 1.1rem;
+  color: #d32f2f;
+  margin-bottom: 2rem;
+  font-weight: 600;
+  padding: 0.5rem 1rem;
+  background-color: #ffebee;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.submission-id {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  background: #f5f5f5;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: #d32f2f;
+  font-weight: 500;
+}
+
+/* Form Elements */
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+label {
+  font-weight: 600;
+  color: #424242;
+  margin-bottom: 0.5rem;
+  display: block;
+  font-size: 0.95rem;
+}
+
+input[type="text"],
+input[type="file"],
+textarea {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  background-color: #fafafa;
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: #d32f2f;
+  box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.1);
+  background-color: #fff;
+}
+
+textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+/* Checkbox/Radio Styles */
+.checkbox-group {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+input[type="radio"] {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e0e0e0;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+input[type="radio"]:checked {
+  border-color: #d32f2f;
+}
+
+input[type="radio"]:checked::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: #d32f2f;
+  border-radius: 50%;
+}
+
+/* Table Styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+th, td {
+  padding: 0.8rem;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+th {
+  background-color: #d32f2f;
+  color: white;
+  font-weight: 500;
+}
+
+tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+tr:hover {
+  background-color: #f5f5f5;
+}
+
+/* Button Styles */
+button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.add-btn {
+  background-color: #d32f2f;
+  color: white;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.add-btn:hover {
+  background-color: #b71c1c;
+  transform: translateY(-2px);
+}
+
+.remove-btn {
+  background: none;
+  color: #d32f2f;
+  padding: 0.3rem;
+  font-size: 1rem;
+}
+
+.remove-btn:hover {
+  background-color: #ffebee;
+}
+
+.submit-btn {
+  background: linear-gradient(to right, #d32f2f, #b71c1c);
+  color: white;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  margin-top: 1rem;
+  align-self: flex-end;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(211, 47, 47, 0.3);
+}
+
+.submit-btn:disabled {
+  background: #9e9e9e;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.back-btn {
+  background: #f5f5f5;
+  color: #424242;
+  padding: 0.8rem 2rem;
+  font-size: 1rem;
+  margin-top: 1rem;
+  margin-left: 1rem;
+}
+
+.back-btn:hover {
+  background: #e0e0e0;
+}
+
+/* Signature Section */
+.signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin: 1.5rem 0;
+}
+
+.signatures > div {
+  background: #fafafa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  border: 1px dashed #e0e0e0;
+}
+
+.signature-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  color: #d32f2f;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.signature-link:hover {
+  text-decoration: underline;
+}
+
+.file-name {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #757575;
+}
+
+/* Uploaded Files */
+.uploaded-files-list {
+  margin: 1rem 0;
+}
+
+.uploaded-files-list h4 {
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  color: #424242;
+}
+
+.uploaded-files-list ul {
+  list-style: none;
+  padding: 0;
+}
+
+.uploaded-files-list li {
+  padding: 0.5rem 1rem;
+  background: #fafafa;
+  margin-bottom: 0.5rem;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.uploaded-files-list a {
+  color: #d32f2f;
+  text-decoration: none;
+}
+
+.uploaded-files-list a:hover {
+  text-decoration: underline;
+}
+
+.remove-file-btn {
+  background: none;
+  border: none;
+  color: #d32f2f;
+  cursor: pointer;
+  margin-left: 1rem;
+}
+
+/* Error Messages */
+.error-message {
+  color: #d32f2f;
+  font-size: 0.85rem;
+  margin-top: 0.3rem;
+}
+
+.user-message {
+  padding: 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
+}
+
+.user-message.error {
+  background-color: #ffebee;
+  color: #d32f2f;
+  border-left: 4px solid #d32f2f;
+}
+
+.user-message.success {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border-left: 4px solid #2e7d32;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .form-container {
+    padding: 1.5rem;
   }
   
-  /* Table styling */
+  .signatures {
+    grid-template-columns: 1fr;
+  }
+  
   table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  
-  th, td {
-    border: 1px solid #ddd;
-    padding: 8px;
-    text-align: left;
-    vertical-align: middle; /* Aligns content in the middle */
-  }
-  
-  /* Make inputs fit within table cells */
-  td input, td textarea {
-    width: 98%; /* Slightly less than 100% to avoid touching borders */
-    margin: 0;
-  }
-
-  
-  th {
-    background: #eee;
-  }
-  
-  .add-btn {
     display: block;
-    width: fit-content;
-    padding: 6px 12px;
-    margin: 10px auto;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
+    overflow-x: auto;
   }
   
-  .add-btn:hover {
-    background: #0056b3;
+  .submission-id {
+    position: static;
+    margin-bottom: 1rem;
   }
-  
-  .back-btn, .submit-btn {
-    width: 48%;
-    padding: 10px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-  
-  .submit-btn {
-    background: #28a745;
-    color: white;
-    border: none;
-  }
-  
-  .back-btn {
-    background: #dc3545;
-    color: white;
-    border: none;
-  }
-  
-  .submit-btn:hover { background: #218838; }
-  .back-btn:hover { background: #c82333; }
-  
+}
+
+/* Animation for form elements */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+form > * {
+  animation: fadeIn 0.4s ease-out forwards;
+}

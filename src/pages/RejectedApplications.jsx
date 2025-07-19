@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from "react";
+import Navbar from "../components/Navbar";
 import { useNavigate } from "react-router-dom";
+import Sidebar from "../components/Sidebar";
+import "../components/styles/facPending.css"; // Assuming this CSS file contains general table styling
 
 const RejectedApplications = () => {
   const [applications, setApplications] = useState([]);
@@ -28,6 +31,8 @@ const RejectedApplications = () => {
             localStorage.removeItem("token");
             setError("User session corrupted. Please log in again.");
             setLoading(false);
+            // Optionally, navigate to login page here:
+            // navigate('/login');
             return;
           }
         }
@@ -35,6 +40,8 @@ const RejectedApplications = () => {
         if (!svvNetId) {
           setError("User not authenticated. Please log in to view rejected applications.");
           setLoading(false);
+          // Optionally, navigate to login page here:
+          // navigate('/login');
           return;
         }
 
@@ -70,7 +77,7 @@ const RejectedApplications = () => {
     };
 
     fetchApplications();
-  }, []);
+  }, []); // Empty dependency array means this runs once on component mount
 
   const handleViewClick = (id) => {
     let userBranch = null;
@@ -95,58 +102,67 @@ const RejectedApplications = () => {
     }
 
     const queryParam = params.toString() ? `?${params.toString()}` : "";
+    // Note: If the detail page needs to distinguish between pending/rejected,
+    // you might add a 'status' query param here as well.
     navigate(`/application/${id}${queryParam}`);
   };
 
+  // Conditional rendering for loading and error states
   if (loading) return <div className="p-6">Loading rejected applications...</div>;
   if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h2 className="text-2xl font-semibold mb-4">Rejected Applications</h2>
-      <p className="text-gray-600 mb-6">
-        Review the details of all your declined or rejected applications.
-      </p>
-      <div className="overflow-x-auto bg-white rounded shadow">
-        <table className="w-full border text-left">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3 border">Topic</th>
-              <th className="p-3 border">Name</th>
-              <th className="p-3 border">Submitted</th>
-              <th className="p-3 border">Branch</th>
-              <th className="p-3 border">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {applications.length === 0 ? (
-              <tr>
-                <td colSpan="5" className="text-center text-gray-500 py-4">
-                  No rejected applications found.
-                </td>
-              </tr>
-            ) : (
-              applications.map((app) => (
-                <tr key={app._id} className="border-t hover:bg-gray-50">
-                  <td className="p-3">{app.topic || "N/A"}</td>
-                  <td className="p-3">{app.name || "N/A"}</td>
-                  <td className="p-3">
-                    {new Date(app.submitted).toLocaleDateString()}
-                  </td>
-                  <td className="p-3">{app.branch || "N/A"}</td>
-                  <td className="p-3">
-                    <button
-                      onClick={() => handleViewClick(app._id)}
-                      className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
-                    >
-                      View
-                    </button>
-                  </td>
+    <div className="main-wrapper">
+      <Navbar />
+      <Sidebar />
+      <div className="page-wrapper">
+        <div className="content-area">
+          <h2 className="page-title">Rejected Applications</h2>
+          <div className="table-wrapper">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Topic</th>
+                  <th>Name</th>
+                  <th>Submitted</th>
+                  <th>Branch</th>
+                  <th>Remarks</th> {/* Added Remarks column header */}
+                  <th>Action</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {applications.length === 0 ? (
+                  <tr>
+                    {/* Adjusted colSpan to 6 for the new Remarks column */}
+                    <td colSpan="6" className="text-center text-gray-500 py-4">
+                      No rejected applications found.
+                    </td>
+                  </tr>
+                ) : (
+                  applications.map((app) => (
+                    <tr key={app._id} className="border-t hover:bg-gray-50">
+                      <td className="p-3">{app.topic || "N/A"}</td>
+                      <td className="p-3">{app.name || "N/A"}</td>
+                      <td className="p-3">
+                        {new Date(app.submitted).toLocaleDateString()}
+                      </td>
+                      <td className="p-3">{app.branch || "N/A"}</td>
+                      <td className="p-3">{app.remarks || "N/A"}</td> {/* Display remarks */}
+                      <td className="p-3">
+                        <button
+                          onClick={() => handleViewClick(app._id)}
+                          className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

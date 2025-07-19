@@ -1,228 +1,339 @@
-/* General Container */
-.form-container {
-    background: #ffffff;
-    padding: 20px;
-    border-radius: 8px;
-    width: 100%;
-    max-width: 750px; /* Increased width for better alignment */
-    margin: auto;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh; /* Ensure the form takes full height */
-  }
-  
-  /* Heading */
-  h2 {
-    text-align: center;
-    color: #333;
-    font-size: 24px;
-  }
-  
-  .form-category {
-    text-align: center;
-    color: #666;
-    font-size: 16px;
-    margin-bottom: 20px;
-  }
-  
-  /* Labels */
-  label {
-    display: block;
-    font-weight: bold;
-    margin: 10px 0 5px;
-    color: #444;
-  }
-  
-  /* Input Fields */
-  input, textarea {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    font-size: 14px;
-  }
-  
-  textarea {
-    resize: vertical;
-    height: 80px;
-  }
-  
-  /* Checkbox */
-  .checkbox-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 14px;
-  }
-  
-  /* Guide Details */
-  .guide-details {
-    display: flex;
-    gap: 15px;
-    flex-wrap: wrap;
-  }
-  
-  .guide-details input {
-    flex: 1;
-  }
-  
-  /* Student Table */
-  .student-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 15px;
-  }
-  
-  .student-table th, .student-table td {
-    border: 1px solid #ddd;
-    font-size: 14px;
-    padding: 8px;
-    text-align: center;
-  }
-  
-  .student-table th {
-    background: #f4f4f4;
-    font-weight: bold;
-  }
-  
-  /* Signatures */
-  .signatures {
-    display: flex;
-    justify-content: space-between;
-    margin: 20px 0;
-  }
-  
-  .signature-btn {
-    padding: 10px 15px;
-    background: #007bff;
-    color: white;
-    border: none;
-    cursor: pointer;
-    border-radius: 5px;
-    font-size: 14px;
-  }
-  
-  .signature-btn:hover {
-    background: #0056b3;
-  }
-  
-  /* File Upload */
-  .file-input {
-    display: block;
-    margin-top: 10px;
-  }
-  
-  .file-name {
-    font-size: 14px;
-    color: green;
-    margin-top: 5px;
-  }
-  
-  /* Buttons */
-  .form-actions {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 20px;
-  }
-  
-  .back-btn, .submit-btn {
-    padding: 12px 18px;
-    border: none;
-    cursor: pointer;
-    border-radius: 5px;
-    font-size: 14px;
-  }
-  
-  .back-btn {
-    background: #d9534f;
-    color: white;
-  }
-  
-  .back-btn:hover {
-    background: #c9302c;
-  }
-  
-  .submit-btn {
-    background: #5cb85c;
-    color: white;
-  }
-  
-  .submit-btn:hover {
-    background: #4cae4c;
-  }
+/* UG1Form.css - Red, White & Grey Theme (No Blue) */
 
-  signatures {
-    display: flex;
-    justify-content: space-around;
-    margin-top: 20px;
-    gap: 20px; /* Space between signature boxes */
+/* Base Styles */
+.form-container {
+  max-width: 1000px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background-color: #ffffff; /* White */
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333333; /* Dark Grey */
+}
+
+.ug1-form h2 {
+  color: #d32f2f; /* Red */
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 2px solid #d32f2f; /* Red */
+  padding-bottom: 0.5rem;
+}
+
+.form-category {
+  color: #757575; /* Medium Grey */
+  font-style: italic;
+  margin-bottom: 2rem;
+  font-size: 1rem;
+}
+
+/* Form Elements */
+label {
+  display: block;
+  margin: 1rem 0 0.25rem;
+  font-weight: 600;
+  color: #424242; /* Dark Grey */
+}
+
+input[type="text"],
+input[type="file"],
+textarea,
+select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0; /* Light Grey */
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.3s;
+  margin-bottom: 0.25rem;
+  background-color: #fafafa; /* Very Light Grey */
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  border-color: #d32f2f; /* Red */
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.2); /* Red with opacity */
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* Radio Buttons */
+.radio-group {
+  display: flex;
+  gap: 1rem;
+  margin: 0.5rem 0;
+}
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+  margin: 0;
+  color: #424242; /* Dark Grey */
+}
+
+input[type="radio"] {
+  width: auto;
+  margin: 0;
+  accent-color: #d32f2f; /* Red */
+}
+
+/* Sections */
+.form-group {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background-color: #f5f5f5; /* Light Grey */
+  border-radius: 8px;
+  border-left: 4px solid #d32f2f; /* Red */
+}
+
+.form-group h3 {
+  margin-top: 0;
+  color: #d32f2f; /* Red */
+  border-bottom: 1px solid #e0e0e0; /* Light Grey */
+  padding-bottom: 0.5rem;
+}
+
+/* Guide Details */
+.guide-details-entry {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #fff; /* White */
+  border-radius: 6px;
+  border: 1px solid #e0e0e0; /* Light Grey */
+}
+
+.form-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.form-row > div {
+  flex: 1;
+}
+
+/* Student Table */
+.table-responsive {
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.student-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+}
+
+.student-table th,
+.student-table td {
+  padding: 0.5rem;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0; /* Light Grey */
+}
+
+.student-table th {
+  background-color: #eeeeee; /* Light Grey */
+  color: #424242; /* Dark Grey */
+  font-weight: 600;
+}
+
+.student-table tr:hover {
+  background-color: #f5f5f5; /* Light Grey */
+}
+
+.student-table input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #e0e0e0; /* Light Grey */
+  border-radius: 4px;
+  background-color: #fafafa; /* Very Light Grey */
+}
+
+/* Compact File Upload Sections */
+.signatures-section {
+  display: flex;
+  gap: 1.5rem;
+  margin: 1rem 0;
+}
+
+.signature-upload {
+  flex: 1;
+  padding: 0.75rem;
+  background-color: #f5f5f5; /* Light Grey */
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid #d32f2f; /* Red */
+}
+
+.signature-upload label {
+  margin: 0.25rem 0;
+}
+
+.file-upload-section {
+  margin: 0.5rem 0;
+}
+
+.file-upload-section label {
+  margin: 0.25rem 0;
+}
+
+/* File Preview */
+.file-preview {
+  margin-top: 0.25rem;
+}
+
+.file-preview ul {
+  list-style: none;
+  padding: 0;
+  margin: 0.1rem 0;
+}
+
+.file-preview li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  margin-bottom: 0.25rem;
+  background-color: #fff; /* White */
+  border: 1px solid #e0e0e0; /* Light Grey */
+  border-radius: 6px;
+}
+
+.file-preview a {
+  color: #d32f2f; /* Red */
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.file-preview a:hover {
+  color: #b71c1c; /* Darker Red */
+  text-decoration: underline;
+}
+
+.file-preview button {
+  background: none;
+  border: none;
+  color: #d32f2f; /* Red */
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.file-preview button:hover {
+  background-color: #ffebee; /* Very Light Red */
+}
+
+/* No file selected text */
+.text-muted {
+  color: #9e9e9e; /* Medium Grey */
+  font-size: 0.85rem;
+  margin: 0.1rem 0 0.25rem;
+  font-style: italic;
+}
+
+/* Error Messages */
+.error-message {
+  color: #d32f2f; /* Red */
+  font-size: 0.85rem;
+  margin: -0.2rem 0 0.25rem;
+}
+
+/* Buttons */
+.form-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+
+button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.submit-btn {
+  background-color: #d32f2f; /* Red */
+  color: white;
+}
+
+.submit-btn:hover {
+  background-color: #b71c1c; /* Darker Red */
+}
+
+.submit-btn:disabled {
+  background-color: #9e9e9e; /* Medium Grey */
+  cursor: not-allowed;
+}
+
+.back-btn {
+  background-color: #f5f5f5; /* Light Grey */
+  color: #424242; /* Dark Grey */
+  border: 1px solid #e0e0e0; /* Light Grey */
+}
+
+.back-btn:hover {
+  background-color: #e0e0e0; /* Medium Grey */
+}
+
+.add-btn {
+  background-color: #d32f2f; /* Red */
+  color: white;
+  margin-top: 0.5rem;
+}
+
+.add-btn:hover {
+  background-color: #b71c1c; /* Darker Red */
+}
+
+.remove-btn-small {
+  background-color: #ffebee; /* Very Light Red */
+  color: #d32f2f; /* Red */
+  padding: 0.25rem 0.75rem;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  border: 1px solid #ef9a9a; /* Light Red */
+}
+
+.remove-btn-small:hover {
+  background-color: #ef9a9a; /* Light Red */
+  color: white;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .form-container {
+    padding: 1rem;
   }
   
-  .signatures > div {
-    flex: 1;
-    border: 1px solid #ccc;
-    padding: 15px;
-    border-radius: 8px;
-    text-align: center;
-  }
-  
-  .signature-display {
-    margin-top: 10px;
-    display: flex;
+  .form-row,
+  .signatures-section {
     flex-direction: column;
-    align-items: center;
+    gap: 0.75rem;
   }
   
-  .signature-image {
-    max-width: 150px; /* Adjust as needed */
-    max-height: 80px; /* Adjust as needed */
-    border: 1px solid #eee;
-    margin-bottom: 5px;
-    object-fit: contain; /* Ensures the image is contained within its bounds */
+  .student-table {
+    font-size: 0.9rem;
   }
   
-  .view-link {
-    color: #007bff;
-    text-decoration: none;
-    font-size: 0.9em;
+  .form-actions {
+    flex-direction: column;
+    gap: 0.75rem;
   }
   
-  .view-link:hover {
-    text-decoration: underline;
+  button {
+    width: 100%;
   }
-  
-  .file-list {
-    list-style-type: none;
-    padding-left: 0;
-    margin-top: 10px;
-  }
-  
-  .file-list li {
-    display: flex;
-    align-items: center;
-    margin-bottom: 5px;
-  }
-  
-  .file-list li a {
-    margin-right: 10px;
-    color: #007bff;
-    text-decoration: none;
-  }
-  
-  .file-list li a:hover {
-    text-decoration: underline;
-  }
-  
-  .file-list li button {
-    background: none;
-    border: none;
-    color: red;
-    cursor: pointer;
-    font-size: 0.9em;
-  }
-  
-  .file-list li button:hover {
-    text-decoration: underline;
-  }
-  
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import FacNavbar from "../FacNavbar";
+import Navbar from "../Navbar";
 import "../styles/FacUG1.css";
 
 const FacUGForm3A = () => {
@@ -32,7 +32,7 @@ const FacUGForm3A = () => {
 
   return (
     <>
-      <FacNavbar />
+      <Navbar />
       <main className="facug1-container">
         <div className="facug1-card">
           <h2 className="facug1-title">Applications for UG_3A</h2>
@@ -50,7 +50,6 @@ const FacUGForm3A = () => {
                     <th>Applicant’s Roll No.</th>
                     <th>Application Date</th>
                     <th>Branch</th>
-                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -60,14 +59,6 @@ const FacUGForm3A = () => {
                       <td>{app.students?.[0]?.rollNo || "N/A"}</td>
                       <td>{new Date(app.createdAt).toLocaleDateString("en-GB")}</td>
                       <td>{app.students?.[0]?.branch || "—"}</td>
-                      <td>
-                        <button
-                          onClick={() => navigate(`/fac/view/ug3a/${app._id}`)}
-                          className="view-link"
-                        >
-                          View Form
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>

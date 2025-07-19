@@ -1,0 +1,130 @@
+/* Modal.css - REVISED WITH LARGER SIZE */
+
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(74, 85, 104, 0.5); /* gray-600 with 50% opacity */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000; /* High z-index to appear on top */
+    padding: 1rem; /* p-4 */
+}
+
+/* Modal Container */
+.modal-container {
+    background-color: #fff;
+    border-radius: 0.5rem; /* rounded-lg */
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* shadow-xl */
+    overflow: hidden; /* overflow-hidden */
+    width: 100%; /* w-full */
+    max-width: 60rem; /* Increased from 48rem (768px) to 60rem (960px) for larger width */
+    height: 90vh; /* Increased from 75vh to 90vh for larger height */
+    display: flex;
+    flex-direction: column; /* flex-col */
+}
+
+/* Modal Header */
+.modal-header {
+    padding: 1rem 1.25rem; /* p-4 + adjusted horizontal padding */
+    border-bottom: 1px solid #e2e8f0; /* gray-200 */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem; /* text-xl */
+    font-weight: 600; /* font-semibold */
+    color: #333; /* text-gray-800 */
+}
+
+.modal-close-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem; /* text-2xl */
+    cursor: pointer;
+    color: #666; /* text-gray-500 */
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    font-weight: bold; /* font-bold */
+}
+
+.modal-close-button:hover {
+    background-color: #f0f0f0;
+    color: #333; /* hover:text-gray-700 */
+}
+
+/* Modal Body */
+.modal-body-content { /* Renamed to avoid clash with modal-body as a container */
+    flex-grow: 1; /* flex-grow */
+    padding: 1rem; /* p-4 */
+    overflow: auto; /* overflow-auto */
+    display: flex; /* To make iframe fill the space */
+    justify-content: center;
+    align-items: center;
+    flex-direction: column; /* In case content is not an iframe, for centering */
+}
+
+.modal-body-content iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.modal-error-message {
+    color: #ef4444; /* Tailwind red-500 */
+    font-size: 0.875rem; /* 14px */
+    margin-top: 0.5rem;
+}
+
+/* Modal Footer (for remarks modal, if you use it in this modal too) */
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #eee;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-cancel,
+.modal-submit {
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+    font-weight: 500;
+}
+
+.modal-cancel {
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    color: #333;
+}
+
+.modal-cancel:hover {
+    background-color: #e0e0e0;
+    border-color: #ccc;
+}
+
+.modal-submit {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    border: none;
+}
+
+.modal-submit:hover {
+    background-color: #45a049; /* Darker green */
+}
+
+.modal-submit:disabled,
+.modal-cancel:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

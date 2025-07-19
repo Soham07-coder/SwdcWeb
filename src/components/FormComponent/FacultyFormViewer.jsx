@@ -2,9 +2,9 @@
 import React from "react";
 import { useParams } from "react-router-dom";
 
-import FacUG1Viewing from "./FacUG1Viewing";
-import FacUG2Viewing from "./FacUG2Viewing";
-// import FacUG3AViewing from "./FacUG3AViewing";
+// import FacUG1Viewing from "./FacUG1Viewing";
+// import FacUG2Viewing from "./FacUG2Viewing";
+// // import FacUG3AViewing from "./FacUG3AViewing";
 // import FacUG3BViewing from "./FacUG3BViewing";
 // import FacPG1Viewing from "./FacPG1Viewing";
 // import FacPG2AViewing from "./FacPG2AViewing";
@@ -16,10 +16,10 @@ const FacultyFormViewer = () => {
 
   const renderFormComponent = () => {
     switch (formType.toLowerCase()) {
-      case "ug1":
-        return <FacUG1Viewing formId={formId} />;
-      case "ug2":
-        return <FacUG2Viewing formId={formId} />;
+      // case "ug1":
+      //   return <FacUG1Viewing formId={formId} />;
+      // case "ug2":
+      //   return <FacUG2Viewing formId={formId} />;
       // case "ug3a":
       //   return <FacUG3AViewing formId={formId} />;
       // case "ug3b":

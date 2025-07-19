@@ -3,7 +3,7 @@ import '../components/styles/Policy.css';;
 
 const Policy = () => {
   const handleDownload = () => {
-    const pdfUrl = '/public/Student Development Policy A.Y 2024-25.pdf'; 
+    const pdfUrl = '/Student Development Policy A.Y 2024-25.pdf'; 
     const link = document.createElement('a');
     link.href = pdfUrl;
     link.download = 'Student_Development_Policy_A.Y_2024-25.pdf';

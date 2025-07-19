@@ -1,161 +1,197 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios"; // For future API use
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
+import axios from "axios"; // Re-import axios for backend calls
 
 import "./login.css";
 import logo from "../assets/somaiya-logo.png";
 import logo1 from "../assets/trust.png";
-import googleIcon from "../assets/google-logo.jpg";
 
 const GOOGLE_CLIENT_ID = "653938123906-1qpf6dbs0u51auibm3lrmu3sg7a0gamh.apps.googleusercontent.com";
 
 const Login = () => {
-  const [username, setUsername] = useState("");
+   // Changed email to svvNetId to align with backend expectations
+  const [svvNetId, setSvvNetId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [validatorError, setValidatorError] = useState("");
+  const [loading, setLoading] = useState(false); // Reintroduce loading state
+
   const navigate = useNavigate();
+
+  // Hardcoded users for demo purposes (using email as key for Google matching)
+  const hardcodedUsers = {
+    // Students
+    "devanshu.d@somaiya.edu": { password: "Devanshu123", role: "Student" },
+    "sohamgore@somaiya.edu": { password: "12345678", role: "Student" },
+    // Admin
+    "sdc-kjsce@somaiya.edu": { password: "admin123", role: "Admin" },
+    "devanshu.dee@somaiya.edu": { password: "admin123", role: "Admin" },
+    // Add other roles if needed for hardcoding (e.g., Validator, Coordinator)
+    "validator.a@somaiya.edu": { password: "val123", role: "Validator" },
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
-    const hardcodedUsers = {
-      "devanshu.d": { password: "Devanshu123", role: "student", branch: "(AI & DS)" },
-      "sohamgore": { password: "12345678", role: "student", branch: "COMPS" },
-      "faculty.a": { password: "faculty123", role: "faculty", branch: "COMPS" },
-    };
+    try {
+      // Attempt backend login first
+      const response = await axios.post("http://localhost:5000/api/auth/login", { svvNetId, password });
+      const { token, user } = response.data; // Assuming your backend sends token and user object
 
-    const userEntry = hardcodedUsers[username];
+      localStorage.setItem("token", token);
+      localStorage.setItem("svvNetId", user.svvNetId); // Use svvNetId from backend response
+      localStorage.setItem("user", JSON.stringify(user)); // Store full user object from backend
 
-    if (userEntry && userEntry.password === password) {
-      const { role, branch } = userEntry;
-      localStorage.setItem("svvNetId", username);
-      localStorage.setItem("user", JSON.stringify({ svvNetId: username, role, branch }));
+      completeLogin(user.svvNetId, user.role); // Use role from backend
+    } catch (err) {
+      console.error("Backend login failed:", err.response?.data?.message || err.message);
+      // Fallback to hardcoded/localStorage users if backend fails
+      const userEntry = hardcodedUsers[svvNetId]; // Check hardcoded by svvNetId (email)
 
-      // 🔁 Navigate based on role
-      if (role === "faculty") {
-        navigate("/fac/home");
+      if (userEntry && userEntry.password === password) {
+        completeLogin(svvNetId, userEntry.role);
       } else {
-        navigate("/home");
+        const storedUsers = JSON.parse(localStorage.getItem("userList")) || [];
+        const foundUser = storedUsers.find(u => u.email === svvNetId && u.password === password); // Check stored by email
+
+        if (foundUser) {
+          completeLogin(svvNetId, foundUser.role);
+        } else {
+          setError("Invalid SVV Net ID or password.");
+          // alert("Invalid SVV Net ID or password!"); // Uncomment if you prefer alerts
+        }
       }
-    } else {
-      setError("Invalid SVV Net ID or password.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGoogleSuccess = (credentialResponse, role = "UG (AI&DS)") => {
-    try {
-      const decoded = jwtDecode(credentialResponse.credential);
-      const email = decoded.email;
-      const name = decoded.name;
-      const svvNetId = email.split("@")[0];
-      const domain = email.split("@")[1];
+  const completeLogin = (id, role) => {
+    localStorage.setItem("svvNetId", id);
+    localStorage.setItem("user", JSON.stringify({ svvNetId: id, role })); // Ensure consistent user object structure
 
-      if (!domain.includes("somaiya.edu")) {
-        if (role === "Validator") setValidatorError("Please use a valid Somaiya email.");
-        else setError("Please use a valid Somaiya email.");
+    // Navigate based on role
+    switch (role) {
+      case "Admin": navigate("/AdHome"); break;
+      case "Validator": navigate("/facHome"); break;
+      case "Department Coordinator": navigate("/deptcoordHome"); break;
+      case "Institute Coordinator": navigate("/insticoordHome"); break;
+      case "HOD": navigate("/hodHome"); break;
+      case "Principal": navigate("/principalHome"); break;
+      case "Student": navigate("/home"); break; // Changed to "Student" for consistency
+      default: navigate("/home");
+    }
+  };
+
+  const handleGoogleSuccess = (credentialResponse) => {
+    setError("");
+    setLoading(true); // Set loading for Google login
+
+    try {
+      if (!credentialResponse.credential) {
+        setError("Google login failed: No credential received.");
+        // alert("Google login failed: No credential received.");
         return;
       }
 
-      const isFaculty = role === "Validator";
-      const finalRole = isFaculty ? "faculty" : "student";
-      const branch = isFaculty ? "All" : "AI & DS";
+      const decoded = jwtDecode(credentialResponse.credential);
+      console.log("Decoded Google JWT:", decoded);
 
-      localStorage.setItem("svvNetId", svvNetId);
-      localStorage.setItem("user", JSON.stringify({
-        svvNetId,
-        role: finalRole,
-        branch,
-        name,
-        email,
-        picture: decoded.picture
-      }));
-
-      // 🔁 Navigate based on role
-      if (finalRole === "faculty") {
-        navigate("/fachome");
-      } else {
-        navigate("/home");
+      if (!decoded.email || !decoded.email.endsWith("@somaiya.edu")) {
+        setError("Access denied: Only somaiya.edu emails are allowed.");
+        // alert("Access denied: Only somaiya.edu emails are allowed.");
+        return;
       }
 
+      let userRole = "Student"; // Default role for Somaiya emails
+
+      // Check hardcoded users for role
+      if (hardcodedUsers[decoded.email]) {
+        userRole = hardcodedUsers[decoded.email].role;
+      } else {
+        // Check stored users for role
+        const storedUsers = JSON.parse(localStorage.getItem("userList")) || [];
+        const matchedUser = storedUsers.find((u) => u.email === decoded.email);
+        if (matchedUser && matchedUser.role) {
+          userRole = matchedUser.role;
+        }
+      }
+
+      // Special cases for admin (can override other roles if explicitly defined)
+      if (decoded.email === "sdc-kjsce@somaiya.edu" || decoded.email === "devanshu.dee@somaiya.edu") {
+        userRole = "Admin";
+      }
+
+      completeLogin(decoded.email, userRole);
     } catch (err) {
-      console.error("Error decoding Google credential:", err);
-      if (role === "Validator") setValidatorError("Google login failed.");
-      else setError("Google login failed.");
+      console.error("Google login error:", err);
+      setError("Google login failed: Invalid token or processing error.");
+      // alert("Google login failed: Invalid token or processing error.");
+    } finally {
+      setLoading(false); // Stop loading after Google login attempt
     }
   };
 
-  const handleGoogleError = (role = "UG (AI&DS)") => {
-    if (role === "Validator") setValidatorError("Google login failed.");
-    else setError("Google login failed.");
+  const handleGoogleError = () => {
+    setError("Google login failed. Please try again.");
+    // alert("Google login failed. Please try again.");
+    setLoading(false);
   };
+
 
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div className="login-page">
-        {/* Navbar */}
         <div className="navbar">
           <img src={logo} alt="Somaiya Logo" className="navbar-logo" />
           <h1 className="navbar-title">Welcome to Student Development Cell</h1>
           <img src={logo1} alt="Somaiya Trust Logo" className="navbar-logo1" />
         </div>
 
-        {/* Login Container */}
         <div className="login-container">
-          {/* Validator Box */}
-          <div className="validator-box">
-            <h1 className="validator-title">
-              <span className="highlight">Student</span> <br />
+          <div className="login-box">
+            <h1 className="login-title">
+              <span className="highlight">Student</span>
               <span className="highlight">Development Cell</span>
             </h1>
             <p className="description">
-              The Student Development Policy at K. J. Somaiya College of Engineering reflects our
+              The Student Development Policy at K. J. Somaiya School of Engineering reflects our
               commitment to fostering a dynamic and enriching academic environment for students across all levels of study.
             </p>
-            <h2 className="validator-question">Validator?</h2>
-            <p className="validator-login-text">Login to go on Dashboard</p>
-            {validatorError && <p className="error-message">{validatorError}</p>}
-            <GoogleLogin
-              onSuccess={(credentialResponse) => handleGoogleSuccess(credentialResponse, "Validator")}
-              onError={() => handleGoogleError("Validator")}
-              width="100%"
-              text="signin_with"
-              shape="pill"
-              logo_alignment="left"
-              useOneTap
-            />
-          </div>
 
-          {/* Student Login Box */}
-          <div className="student-login-box">
-            <h2 className="form-title">Please enter your SVV Net ID & password to Login.</h2>
-            <form className="login-form" onSubmit={handleLogin}>
-              <label>SVV Net ID *</label>
+            <h2 className="login-question">Login to your account</h2>
+
+            <form onSubmit={handleLogin} className="login-form">
+              <label>Email *</label>
               <input
-                type="text"
-                placeholder="Enter your SVV Net ID"
+                type="text" // Changed to text for SVV Net ID
+                id="svv-net-id" // Added ID for label association
                 className="login-input"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter your SVV Net ID"
+                value={svvNetId} // Bind to svvNetId state
+                onChange={(e) => { setSvvNetId(e.target.value); setError(""); }}
                 required
+                disabled={loading} // Disable during loading
               />
 
-              <label>Password:</label>
+              <label>Password *</label>
               <input
                 type="password"
-                placeholder="Enter your password"
+                id="password" // Added ID for label association
                 className="login-input"
+                placeholder="Enter your password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); setError(""); }}
                 required
+                disabled={loading} // Disable during loading
               />
 
-              <div className="flex items-center space-x-2">
-                <input type="checkbox" id="remember" className="w-4 h-4" />
-                <label htmlFor="remember" className="text-sm">Remember me</label>
+              <div className="remember-me">
+                <input type="checkbox" id="remember" />
+                <label htmlFor="remember">Remember me</label>
               </div>
 
               {error && <p className="error-message">{error}</p>}
@@ -163,16 +199,24 @@ const Login = () => {
               <button type="submit" className="login-button">Login</button>
             </form>
 
-            <h1 className="or">OR</h1>
+            <div className="or">
+              <span className="or-text">OR</span>
+            </div>
+
             <GoogleLogin
-              onSuccess={(credentialResponse) => handleGoogleSuccess(credentialResponse, "UG (AI&DS)")}
-              onError={() => handleGoogleError("UG (AI&DS)")}
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
               width="100%"
               text="signin_with"
               shape="pill"
               logo_alignment="left"
               useOneTap
+              disabled={loading} // Disable during loading
             />
+            {/* Added copyright info as per your image, adjust positioning with CSS */}
+            <div className="copyright-info-bottom">
+              © {new Date().getFullYear()} K. J. Somaiya School of Engineering. All rights reserved.
+            </div>
           </div>
         </div>
       </div>

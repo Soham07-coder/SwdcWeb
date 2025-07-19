@@ -1,6 +1,69 @@
-import React, { useState , useEffect} from 'react';
+import React, { useState , useEffect, useRef} from 'react';
 import axios from 'axios';
 
+const FilePreview = ({ fileList, fieldName, onRemove }) => {
+  const isUploadedFile = (file) => file && (file.url || file.id || file.fileId || file._id);
+
+  const getDisplayUrl = (file) => {
+    const fileId = file?.id || file?.fileId || file?._id;
+    return fileId ? `/api/pg2bform/file/${fileId}` : null;
+  };
+
+  const getFileName = (file) =>
+    file?.originalName || file?.name || file?.filename || file?.file?.name || "Unnamed File";
+
+  const getFileSize = (file) => {
+    const sizeInBytes = file?.file?.size || file?.size;
+    return sizeInBytes ? `${(sizeInBytes / (1024 * 1024)).toFixed(2)} MB` : "N/A";
+  };
+
+  const normalizedList = Array.isArray(fileList) ? fileList : [fileList].filter(Boolean);
+
+  if (normalizedList.length === 0) {
+    return <p className="text-gray-500 text-sm italic mt-1">No file selected.</p>;
+  }
+
+  return (
+    <ul className="mt-2 list-disc list-inside space-y-1">
+      {normalizedList.map((file, index) => {
+        const displayUrl = getDisplayUrl(file);
+        const fileName = getFileName(file);
+        const fileSize = getFileSize(file);
+        const linkText = displayUrl ? `View ${fileName}` : `${fileName} (${fileSize})`;
+
+        return (
+          <li
+            key={file.id || file.fileId || file._id || index}
+            className="flex items-center justify-between text-sm text-gray-700 p-1 border rounded bg-gray-50 mb-1"
+          >
+            {displayUrl ? (
+              <a
+                href={displayUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline flex-grow"
+              >
+                {linkText}
+              </a>
+            ) : (
+              <span className="flex-grow">{linkText}</span>
+            )}
+
+            {onRemove && (
+              <button
+                type="button"
+                className="ml-4 text-red-600 hover:underline"
+                onClick={() => onRemove(fieldName, index)}
+              >
+                Remove
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
 const PG_2_B = ({ viewOnly = false, data = {} }) => {
   const [formData, setFormData] = useState({
     studentName: '',
@@ -32,11 +95,18 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
   });
 
   const [files, setFiles] = useState({
-    paperCopy: null,
-    groupLeaderSignature: null,
-    guideSignature: null,
-    additionalDocuments: []
+    paperCopy: null, // Will store { id, filename } object or File object
+    groupLeaderSignature: null, // Will store { id, filename } object or File object
+    guideSignature: null, // Will store { id, filename } object or File object
+    additionalDocuments: [] // Will store array of { id, filename } objects or File objects
   });
+
+  // Refs for file inputs to clear them after submission
+  const paperCopyRef = useRef(null);
+  const groupLeaderSignatureRef = useRef(null);
+  const guideSignatureRef = useRef(null);
+  const additionalDocumentsRef = useRef(null);
+
 
   useEffect(() => {
     if (viewOnly && data && Object.keys(data).length > 0) {
@@ -48,7 +118,7 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
         projectTitle: data.projectTitle || '',
         guideName: data.guideName || '',
         coGuideName: data.coGuideName || '',
-        conferenceDate: data.conferenceDate?.slice(0, 10) || '',
+        conferenceDate: data.conferenceDate?.$date?.slice(0, 10) || data.conferenceDate?.slice(0, 10) || '', // Handle $date
         organization: data.organization || '',
         publisher: data.publisher || '',
         paperLink: data.paperLink || '',
@@ -63,17 +133,32 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
         },
         registrationFee: data.registrationFee || '',
         previousClaim: data.previousClaim || 'No',
-        claimDate: data.claimDate?.slice(0, 10) || '',
+        claimDate: data.claimDate?.$date?.slice(0, 10) || data.claimDate?.slice(0, 10) || '', // Handle $date
         amountReceived: data.amountReceived || '',
         amountSanctioned: data.amountSanctioned || '',
         status: data.status || 'pending'
       });
 
+      // Helper function to extract ID from $oid structure
+      const extractFileMetadata = (fileData) => {
+        if (!fileData) return null;
+        return {
+          id: fileData.id?.$oid || fileData.id, // Extract ID from $oid or use directly
+          filename: fileData.filename,
+          originalName: fileData.originalName,
+          mimetype: fileData.mimetype,
+          size: fileData.size
+        };
+      };
+
+      // Set files for preview using the full file objects (which contain id and filename)
       setFiles({
-        paperCopy: data.paperCopyFilename || null,
-        groupLeaderSignature: data.groupLeaderSignatureFilename || null,
-        guideSignature: data.guideSignatureFilename || null,
-        additionalDocuments: data.additionalDocumentsFilename || []
+        paperCopy: extractFileMetadata(data.paperCopy),
+        groupLeaderSignature: extractFileMetadata(data.groupLeaderSignature),
+        guideSignature: extractFileMetadata(data.guideSignature),
+        additionalDocuments: Array.isArray(data.additionalDocuments)
+          ? data.additionalDocuments.map(extractFileMetadata).filter(Boolean) // Filter out any nulls
+          : []
       });
     }
   }, [data, viewOnly]);
@@ -82,6 +167,27 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [userMessage, setUserMessage] = useState({ text: '', type: '' });
+
+  // Determine user role and if student
+  const [currentUserRole, setCurrentUserRole] = useState("");
+  const isStudent = currentUserRole === "student";
+
+  // Effect to load user role from localStorage
+   useEffect(() => {
+      const userString = localStorage.getItem("user");
+      if (userString) {
+        try {
+          const user = JSON.parse(userString);
+          if (user.role) {
+            setCurrentUserRole(user.role.toLowerCase().trim()); // ✅ Normalize here
+          }
+        } catch (e) {
+          console.error("Failed to parse user data from localStorage:", e);
+        }
+      }
+    }, []);
+
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -163,24 +269,34 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
   };
   
   const validateForm = () => {
+    const newErrors = {};
+
     const requiredFields = [
       "studentName", "yearOfAdmission", "projectTitle", "guideName",
       "conferenceDate", "organization", "publisher", "paperLink",
       "registrationFee"
     ];
-    for (const field of requiredFields) {
+    requiredFields.forEach(field => {
       if (!formData[field]) {
-        alert(`Please fill the field: ${field}`);
-        return false;
+        newErrors[field] = "This field is required.";
+      }
+    });
+
+    // File validation only if not in viewOnly mode and it's a student submitting
+    if (!viewOnly && isStudent) {
+      if (!files.paperCopy) {
+        newErrors.paperCopy = "Paper copy is required.";
+      }
+      if (!files.groupLeaderSignature) {
+        newErrors.groupLeaderSignature = "Student's signature is required.";
+      }
+      if (!files.guideSignature) {
+        newErrors.guideSignature = "Guide's signature is required.";
       }
     }
 
-    if (!files.paperCopy || !files.groupLeaderSignature || !files.guideSignature) {
-      alert("Please upload required signatures and paper copy.");
-      return false;
-    }
-
-    return true;
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async () => {
@@ -189,10 +305,14 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
       return;
     }
 
-    const validationErrors = validateForm(formData, files, viewOnly);
-    setErrors(validationErrors);
+    // Only students can submit
+    if (!isStudent) {
+      setUserMessage({ text: 'Only students are allowed to submit this form.', type: "error" });
+      return;
+    }
 
-    if (Object.keys(validationErrors).length > 0) {
+    const isValid = validateForm();
+    if (!isValid) {
       setUserMessage({ text: "Please fix the errors in the form before submitting.", type: "error" });
       return;
     }
@@ -200,7 +320,7 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
     setLoading(true);
 
     let svvNetId = null;
-    let department = null;
+    let department = null; // department will still be extracted, but its presence won't block submission
 
     const userString = localStorage.getItem("user");
     if (userString) {
@@ -226,9 +346,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
         return;
       }
     }
-
-    if (!svvNetId || !department || svvNetId.trim() === '' || department.trim() === '') {
-      setUserMessage({ text: "Authentication error: User ID or department not found. Please log in.", type: "error" });
+    // MODIFIED SECTION: Only check for svvNetId presence, department is now optional for this check
+    if (!svvNetId || svvNetId.trim() === '') {
+      setUserMessage({ text: "Authentication error: User ID not found. Please log in.", type: "error" });
       setLoading(false);
       return;
     }
@@ -247,7 +367,7 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
       }
     });
 
-    // Required files
+    // Required files - ensure these are File objects for submission
     if (files.paperCopy instanceof File) submissionData.append('paperCopy', files.paperCopy);
     if (files.groupLeaderSignature instanceof File) submissionData.append('groupLeaderSignature', files.groupLeaderSignature);
     if (files.guideSignature instanceof File) submissionData.append('guideSignature', files.guideSignature);
@@ -255,23 +375,10 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
     // Optional additional documents
     if (Array.isArray(files.additionalDocuments)) {
       files.additionalDocuments.forEach(file => {
-        if (file instanceof File) {
+        if (file instanceof File) { // Only append if it's a new File object
           submissionData.append('additionalDocuments', file);
         }
       });
-    }
-
-    // Optional PDFs and ZIP
-    if (Array.isArray(files.pdfDocuments)) {
-      files.pdfDocuments.forEach(file => {
-        if (file instanceof File) {
-          submissionData.append('pdfDocuments', file);
-        }
-      });
-    }
-
-    if (files.zipFile instanceof File) {
-      submissionData.append('zipFile', files.zipFile);
     }
 
     try {
@@ -323,9 +430,7 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
             paperCopy: null,
             groupLeaderSignature: null,
             guideSignature: null,
-            additionalDocuments: [],
-            pdfDocuments: [],
-            zipFile: null
+            additionalDocuments: []
           });
 
           setErrors({});
@@ -335,8 +440,6 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
           if (groupLeaderSignatureRef.current) groupLeaderSignatureRef.current.value = null;
           if (guideSignatureRef.current) guideSignatureRef.current.value = null;
           if (additionalDocumentsRef.current) additionalDocumentsRef.current.value = null;
-          if (pdfDocumentsRef.current) pdfDocumentsRef.current.value = null;
-          if (zipFileRef.current) zipFileRef.current.value = null;
         }
 
       } else {
@@ -367,6 +470,12 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
     <div className="form-container max-w-4xl mx-auto p-5 bg-gray-50 rounded-lg shadow-md">
       <h1 className="text-2xl font-bold text-center mb-6 text-gray-800">Post Graduate Form 2B - Reputed Conference</h1>
       
+      {userMessage.text && (
+        <div className={`p-3 mb-4 rounded text-center ${userMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+          {userMessage.text}
+        </div>
+      )}
+
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-4 text-center underline">Application Form</h2>
         
@@ -382,8 +491,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.studentName}
                   onChange={handleChange}
                   disabled={viewOnly}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.studentName ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.studentName && <p className="text-red-500 text-xs mt-1">{errors.studentName}</p>}
               </td>
               <th className="p-2 border border-gray-300 bg-gray-100">Year of Admission</th>
               <td className="p-2 border border-gray-300">
@@ -393,8 +503,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.yearOfAdmission}
                   onChange={handleChange}
                   disabled={viewOnly}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.yearOfAdmission ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.yearOfAdmission && <p className="text-red-500 text-xs mt-1">{errors.yearOfAdmission}</p>}
               </td>
               <th className="p-2 border border-gray-300 bg-gray-100">Whether Paid fees for Current Academic Year</th>
               <td className="p-2 border border-gray-300">
@@ -419,8 +530,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.projectTitle}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.projectTitle ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.projectTitle && <p className="text-red-500 text-xs mt-1">{errors.projectTitle}</p>}
               </td>
             </tr>
           </tbody>
@@ -438,8 +550,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.guideName}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.guideName ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.guideName && <p className="text-red-500 text-xs mt-1">{errors.guideName}</p>}
               </td>
               <th className="p-2 border border-gray-300 bg-gray-100">Date of Conference / Project Competition</th>
               <td className="p-2 border border-gray-300">
@@ -449,8 +562,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.conferenceDate}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.conferenceDate ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.conferenceDate && <p className="text-red-500 text-xs mt-1">{errors.conferenceDate}</p>}
               </td>
             </tr>
             <tr>
@@ -462,8 +576,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.organization}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.organization ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.organization && <p className="text-red-500 text-xs mt-1">{errors.organization}</p>}
               </td>
             </tr>
           </tbody>
@@ -481,8 +596,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.publisher}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.publisher ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.publisher && <p className="text-red-500 text-xs mt-1">{errors.publisher}</p>}
               </td>
             </tr>
             <tr>
@@ -494,8 +610,9 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.paperLink}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.paperLink ? 'border-red-500' : 'border-gray-300'}`}
                 />
+                {errors.paperLink && <p className="text-red-500 text-xs mt-1">{errors.paperLink}</p>}
               </td>
             </tr>
           </tbody>
@@ -618,9 +735,10 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
                   value={formData.registrationFee}
                   disabled={viewOnly}
                   onChange={handleChange}
-                  className="w-full p-1 border border-gray-300 rounded"
+                  className={`w-full p-1 border rounded ${errors.registrationFee ? 'border-red-500' : 'border-gray-300'}`}
                   placeholder="Rs.___________"
                 />
+                {errors.registrationFee && <p className="text-red-500 text-xs mt-1">{errors.registrationFee}</p>}
               </td>
               <th className="p-2 border border-gray-300 bg-gray-100">Have you claimed previously for any paper / project competition under this scheme:</th>
               <td className="p-2 border border-gray-300">
@@ -678,119 +796,164 @@ const PG_2_B = ({ viewOnly = false, data = {} }) => {
 
         <p className="mb-6 text-gray-700">The participation by the student was relevant to their Final Year project and affiliation to the institute was clearly mentioned.</p>
 
-        {/* File Uploads */}
-        <div className="mb-6 space-y-4">
-          {/* Paper Copy Upload */}
-          <div>
-            <label className="block font-semibold mb-2">*Attach proof documents:</label>
-            <div className="flex items-center">
-              <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
-                Choose Paper Copy
-                <input
-                  type="file"
-                  className="hidden"
-                  disabled={viewOnly}
-                  onChange={(e) => handleFileChange('paperCopy', e)}
-                />
-              </label>
-              <span className="ml-2 text-sm">
-                {files.paperCopy ? files.paperCopy.name : "No file chosen"}
-              </span>
-            </div>
-          </div>
-
-          {/* Signatures */}
-          <div className="grid grid-cols-2 gap-4">
+        {(!viewOnly || !isStudent) && (
+          <div className="mb-6 space-y-4">
+            {/* Paper Copy Upload / Preview */}
             <div>
-              <label className="block font-semibold mb-2">Signature of Student (JPEG Only)</label>
-              <div className="flex items-center">
-                <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
-                  Choose File
-                  <input
-                    type="file"
-                    className="hidden"
-                    disabled={viewOnly}
-                    accept="image/jpeg"
-                    onChange={(e) => handleFileChange('groupLeaderSignature', e)}
-                  />
-                </label>
-                <span className="ml-2 text-sm">
-                  {files.groupLeaderSignature ? files.groupLeaderSignature.name : "No file chosen"}
-                </span>
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-semibold mb-2">Signature of Guide (JPEG Only)</label>
-              <div className="flex items-center">
-                <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
-                  Choose File
-                  <input
-                    type="file"
-                    className="hidden"
-                    disabled={viewOnly}
-                    accept="image/jpeg"
-                    onChange={(e) => handleFileChange('guideSignature', e)}
-                  />
-                </label>
-                <span className="ml-2 text-sm">
-                  {files.guideSignature ? files.guideSignature.name : "No file chosen"}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Documents Upload */}
-          <div>
-            <label className="block font-semibold mb-2">Upload Additional Documents (PDF & ZIP only)</label>
-            <div className="flex items-center">
-              <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
-                Choose File(s)
-                <input
-                  type="file"
-                  className="hidden"
-                  multiple
-                  disabled={viewOnly}
-                  accept=".pdf,.zip"
-                  onChange={(e) => handleFileChange('additionalDocuments', e)}
-                />
-              </label>
-            </div>
-
-            {/* Show selected files with remove option */}
-            <div className="ml-2 mt-2 text-sm space-y-1">
-              {files.additionalDocuments && files.additionalDocuments.length > 0 ? (
-                Array.from(files.additionalDocuments).map((file, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between bg-gray-100 px-2 py-1 rounded"
-                  >
-                    <span className="truncate">{file.name}</span>
-                    {!viewOnly && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFile('additionalDocuments', index)}
-                        className="text-red-600 hover:underline text-xs ml-2"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                ))
+              <label className="block font-semibold mb-2">*Attach proof documents:</label>
+              {!viewOnly ? (
+                <div className="flex items-center">
+                  <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+                    Choose Paper Copy
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => handleFileChange("paperCopy", e)}
+                      ref={paperCopyRef}
+                    />
+                  </label>
+                  <span className="ml-2 text-sm">
+                    {files.paperCopy
+                      ? files.paperCopy instanceof File
+                        ? files.paperCopy.name
+                        : files.paperCopy.filename
+                      : "No file chosen"}
+                  </span>
+                </div>
               ) : (
-                <span>No file chosen</span>
+                <FilePreview
+                  fileList={files.paperCopy}
+                  fieldName="paperCopy"
+                  viewOnly={viewOnly}
+                  isStudent={isStudent}
+                />
+              )}
+              {errors.paperCopy && <p className="text-red-500 text-xs mt-1">{errors.paperCopy}</p>}
+            </div>
+
+            {/* Signatures Upload / Preview */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Student Signature */}
+              <div>
+                <label className="block font-semibold mb-2">Signature of Student (JPEG Only)</label>
+                {!viewOnly ? (
+                  <div className="flex items-center">
+                    <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+                      Choose File
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg"
+                        onChange={(e) => handleFileChange("groupLeaderSignature", e)}
+                        ref={groupLeaderSignatureRef}
+                      />
+                    </label>
+                    <span className="ml-2 text-sm">
+                      {files.groupLeaderSignature
+                        ? files.groupLeaderSignature instanceof File
+                          ? files.groupLeaderSignature.name
+                          : files.groupLeaderSignature.filename
+                        : "No file chosen"}
+                    </span>
+                  </div>
+                ) : (
+                  <FilePreview
+                    fileList={files.groupLeaderSignature}
+                    fieldName="groupLeaderSignature"
+                    viewOnly={viewOnly}
+                    isStudent={isStudent}
+                  />
+                )}
+                {errors.groupLeaderSignature && (
+                  <p className="text-red-500 text-xs mt-1">{errors.groupLeaderSignature}</p>
+                )}
+              </div>
+
+              {/* Guide Signature */}
+              <div>
+                <label className="block font-semibold mb-2">Signature of Guide (JPEG Only)</label>
+                {!viewOnly ? (
+                  <div className="flex items-center">
+                    <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+                      Choose File
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg"
+                        onChange={(e) => handleFileChange("guideSignature", e)}
+                        ref={guideSignatureRef}
+                      />
+                    </label>
+                    <span className="ml-2 text-sm">
+                      {files.guideSignature
+                        ? files.guideSignature instanceof File
+                          ? files.guideSignature.name
+                          : files.guideSignature.filename
+                        : "No file chosen"}
+                    </span>
+                  </div>
+                ) : (
+                  <FilePreview
+                    fileList={files.guideSignature}
+                    fieldName="guideSignature"
+                    viewOnly={viewOnly}
+                    isStudent={isStudent}
+                  />
+                )}
+                {errors.guideSignature && (
+                  <p className="text-red-500 text-xs mt-1">{errors.guideSignature}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Additional Documents Upload / Preview */}
+            <div>
+              <label className="block font-semibold mb-2">Additional Documents (PDF & ZIP only)</label>
+              {!viewOnly ? (
+                <>
+                  <div className="flex items-center">
+                    <label className="bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+                      Choose File(s)
+                      <input
+                        type="file"
+                        className="hidden"
+                        multiple
+                        accept=".pdf,.zip"
+                        onChange={(e) => handleFileChange("additionalDocuments", e)}
+                        ref={additionalDocumentsRef}
+                      />
+                    </label>
+                  </div>
+                  <FilePreview
+                    fileList={files.additionalDocuments}
+                    fieldName="additionalDocuments"
+                    viewOnly={false}
+                    isStudent={isStudent}
+                    onRemove={handleRemoveFile}
+                  />
+                </>
+              ) : (
+                <FilePreview
+                  fileList={files.additionalDocuments}
+                  fieldName="additionalDocuments"
+                  viewOnly={viewOnly}
+                  isStudent={isStudent}
+                />
               )}
             </div>
           </div>
-        </div>
+        )}
+
         {/* Form Actions */}
         <div className="flex justify-between">
           <button onClick={() => window.history.back()} className="back-btn bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600">
             Back
           </button>
-          <button  onClick={handleSubmit} className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600">
-            Submit
-          </button>
+          {!viewOnly && isStudent && (
+            <button onClick={handleSubmit} className="submit-btn bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600" disabled={loading}>
+              {loading ? 'Submitting...' : 'Submit'}
+            </button>
+          )}
         </div>
       </div>
     </div>
