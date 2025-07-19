@@ -24,7 +24,7 @@ const PG2BFormSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
-  department: { type: String, required: true },
+  department: { type: String, required: false },
   studentName: { type: String, required: true },
   yearOfAdmission: { type: String, required: true },
   feesPaid: { type: String, enum: ['Yes', 'No'], required: true },
@@ -60,7 +60,13 @@ const PG2BFormSchema = new mongoose.Schema({
     enum: ['pending', 'approved', 'rejected', 'under Review'],
     default: 'pending',
   },
-
+  statusHistory: [{
+    status: String, // This will store the DETAILED status names (e.g., 'PENDING_HOD_APPROVAL', 'HOD_APPROVED', etc.)
+    date: { type: Date, default: Date.now },
+    remark: String ,// Optional: Specific remarks for this status change
+    changedBy: String, // To store svvNetId of the user who changed the status
+    changedByRole: String // To store the role of the user who changed the status
+  }],
   // ✅ Store complete file metadata
   paperCopy: { type: fileMetadataSchema, required: true },
   groupLeaderSignature: { type: fileMetadataSchema, required: true },

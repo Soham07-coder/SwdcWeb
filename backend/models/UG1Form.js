@@ -46,6 +46,13 @@ const UG1FormSchema = new mongoose.Schema({
     enum: ["pending", "approved", "rejected"],
     default: "pending",
   },
+  statusHistory: [{
+    status: String, // This will store the DETAILED status names (e.g., 'PENDING_HOD_APPROVAL', 'HOD_APPROVED', etc.)
+    date: { type: Date, default: Date.now },
+    remark: String ,// Optional: Specific remarks for this status change
+    changedBy: String, // To store svvNetId of the user who changed the status
+    changedByRole: String // To store the role of the user who changed the status
+  }],
   remarks: { type: String }, // ✅ Added remarks field
 }, { timestamps: true }); // `timestamps: true` adds `createdAt` and `updatedAt` fields
 

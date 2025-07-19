@@ -3,452 +3,247 @@ import mongoose from "mongoose";
 import multer from "multer";
 import { GridFSBucket } from "mongodb";
 import UG2Form from "../models/UGForm2.js"; // Assuming your UG2 model is named UGForm2.js
+import dotenv from 'dotenv'; // Import dotenv to load environment variables
+import { sendEmail } from "../controllers/emailService.js";  
+
+dotenv.config(); // Load environment variables
 
 const router = express.Router();
 const conn = mongoose.connection;
 
 let gfs;
-let upload = null;
+let upload = null; // Keep initialized to null
 
 conn.once("open", () => {
-  gfs = new GridFSBucket(conn.db, { bucketName: "uploads" });
-  upload = multer({ storage: multer.memoryStorage() });
-  console.log("✅ GridFS + Multer (memoryStorage) initialized for UG2Form routes");
-});
+  gfs = new GridFSBucket(conn.db, { bucketName: "uploads" });
+  upload = multer({ storage: multer.memoryStorage() }); // Initialize multer here
+  console.log("✅ GridFS + Multer (memoryStorage) initialized for UG2Form routes");
 
-// Helper function to delete a file from GridFS
-const deleteGridFSFile = async (fileId) => {
-  if (!fileId || !gfs || !mongoose.Types.ObjectId.isValid(fileId)) {
-    console.warn(`Attempted to delete invalid or null fileId: ${fileId}`);
-    return;
-  }
-  try {
-    await gfs.delete(new mongoose.Types.ObjectId(fileId));
-    console.log(`🗑️ Successfully deleted GridFS file: ${fileId}`);
-  } catch (error) {
-    if (error.message.includes("File not found")) {
-      console.warn(`🤔 GridFS file not found for deletion: ${fileId}`);
-    } else {
-      console.error(`❌ Error deleting GridFS file ${fileId}:`, error);
-    }
-  }
-};
+  // === Move all route definitions INSIDE this block ===
 
+  // Helper function to delete a file from GridFS
+  const deleteGridFSFile = async (fileId) => {
+    if (!fileId || !gfs || !mongoose.Types.ObjectId.isValid(fileId)) {
+      console.warn(`Attempted to delete invalid or null fileId: ${fileId}`);
+      return;
+    }
+    try {
+      await gfs.delete(new mongoose.Types.ObjectId(fileId));
+      console.log(`🗑️ Successfully deleted GridFS file: ${fileId}`);
+    } catch (error) {
+      if (error.message.includes("File not found")) {
+        console.warn(`🤔 GridFS file not found for deletion: ${fileId}`);
+      } else {
+        console.error(`❌ Error deleting GridFS file ${fileId}:`, error);
+      }
+    }
+  };
 
-// --- EXISTING populateFormWithFileDetails (copied for context, ensure it's defined once) ---
-// This function needs to be adjusted to output `pdfFiles`, `zipFileDetails`, `guideSignature`,
-// and `leaderSignature` (for groupLeaderSignature) to match the frontend expectations.
-const populateFormWithFileDetails = async (form) => {
-  const formObject = form.toObject(); // Convert Mongoose document to plain JS object
+  // Multer configuration for file uploads
+  const cpUpload = upload.fields([
+    { name: 'groupLeaderSignature', maxCount: 1 },
+    { name: 'guideSignature', maxCount: 1 },
+    { name: 'uploadedFiles', maxCount: 10 }, // Assuming this is for multiple files
+  ]);
 
-  // Helper to get file details and URL
-  const getFileDetails = async (fileId) => {
-    if (!fileId || !gfs || !mongoose.Types.ObjectId.isValid(fileId)) return null;
-    try {
-      const files = await gfs.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
-      if (files.length > 0) {
-        const file = files[0];
-        const BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000'; // Adjust as per your backend URL
-        return {
-          fileId: file._id,
-          originalName: file.filename, // Changed from 'filename' to 'originalName' to match frontend
-          mimetype: file.contentType, // Changed from 'contentType' to 'mimetype' to match frontend
-          url: `${BASE_URL}/api/ug2forms/uploads/${file._id}`, // This links to your router.get("/uploads/:fileId")
-        };
-      }
-    } catch (error) {
-      console.error(`❌ Error fetching GridFS file metadata for ID ${fileId}:`, error);
-    }
-    return null;
-  };
+  // 📤 POST /saveFormData - Create UG-2 Form
+  router.post('/saveFormData', cpUpload, async (req, res) => {
+    const uploadedFileIds = []; // Array to store IDs for rollback
 
-  // Populate PDF files (frontend expects `pdfFiles`)
-  formObject.pdfFiles = await Promise.all(
-    (formObject.uploadedFilesIds || []).map(id => getFileDetails(id))
-  ).then(results => results.filter(Boolean)); // Filter out nulls/failures
+    try {
+      const { files } = req;
+      const {
+        svvNetId,
+        projectTitle,
+        projectDescription,
+        utility,
+        receivedFinance,
+        financeDetails,
+        totalBudget,
+        guideDetails: guideDetailsString, // Receive as string
+        students: studentsString, // Receive as string
+        expenses: expensesString, // Receive as string
+      } = req.body;
 
-  // Populate ZIP file (frontend expects `zipFileDetails`)
-  formObject.zipFileDetails = await getFileDetails(formObject.zipFileId);
+      // Basic validation
+      if (!svvNetId || !projectTitle || !projectDescription || !utility || receivedFinance === undefined || !totalBudget || !guideDetailsString || !studentsString || !expensesString) {
+        return res.status(400).json({ message: "Missing required form fields." });
+      }
 
-  // Populate Guide Signature
-  formObject.guideSignature = await getFileDetails(formObject.guideSignatureId);
-
-  // Populate Group Leader Signature (frontend expects `leaderSignature`)
-  formObject.leaderSignature = await getFileDetails(formObject.groupLeaderSignatureId); // Renamed for frontend
-
-  return formObject;
-};
-
-// --- REST OF YOUR EXISTING UG2 ROUTES ---
-// === Save new UG2 form (without file uploads) ===
-router.post("/saveFormData", async (req, res) => {
-  try {
-    const data = req.body;
-
-    // Convert guideNames and employeeCodes to structured 'guides' array
-    const guides = (data.guideNames || []).map((name, index) => ({
-      guideName: name,
-      employeeCode: data.employeeCodes[index] || ""
-    }));
-
-    // Convert student details to structured 'studentDetails' array
-    const studentDetails = (data.students || []).map(s => ({
-        studentName: s.name,
-        year: s.year,
-        class: s.class,
-        div: s.div,
-        branch: s.branch,
-        rollNumber: s.rollNo,
-        mobileNumber: s.mobileNo,
-    }));
-
-    const form = new UG2Form({
-        ...data,
-        guides,
-        studentDetails,
-        uploadedFilesIds: [], // Initialize empty
-        zipFileId: undefined,
-        guideSignatureId: undefined,
-        groupLeaderSignatureId: undefined,
-    });
-    const saved = await form.save();
-    res.status(201).json({ message: "UG2Form saved", formId: saved._id });
-  } catch (err) {
-    console.error("❌ Save UG2Form error:", err);
-    return err.name === "ValidationError"
-      ? res.status(400).json({ error: "Validation failed", details: err.errors })
-      : res.status(500).json({ error: "Server error", message: err.message });
-  }
-});
-
-// === Update UG2 form (no files) ===
-router.put("/updateFormData/:id", async (req, res) => {
-  const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Invalid ID" });
-
-  try {
-    const data = { ...req.body };
-
-    // Convert guideNames and employeeCodes to structured 'guides' array for update
-    if (data.guideNames && data.employeeCodes) {
-      data.guides = data.guideNames.map((name, index) => ({
-        guideName: name,
-        employeeCode: data.employeeCodes[index] || ""
-      }));
-      delete data.guideNames; // Remove flattened arrays as we store structured array
-      delete data.employeeCodes;
-    }
-
-    // Convert student details to structured 'studentDetails' array for update
-    if (data.students) {
-        data.studentDetails = data.students.map(s => ({
-            studentName: s.name,
-            year: s.year,
-            class: s.class,
-            div: s.div,
-            branch: s.branch,
-            rollNumber: s.rollNo,
-            mobileNumber: s.mobileNo,
-        }));
-        delete data.students;
-    }
-
-    const updated = await UG2Form.findByIdAndUpdate(id, data, {
-      new: true,
-      runValidators: true,
-    });
-    if (!updated) return res.status(404).json({ error: "Not found" });
-    res.json({ message: "Updated successfully", form: updated });
-  } catch (err) {
-    console.error("❌ Update error:", err);
-    return err.name === "ValidationError"
-      ? res.status(400).json({ error: "Validation failed", details: err.errors })
-      : res.status(500).json({ error: "Server error", message: err.message });
-  }
-});
+      // Parse JSON strings back into arrays/objects
+      const guideDetails = JSON.parse(guideDetailsString);
+      const students = JSON.parse(studentsString);
+      const expenses = JSON.parse(expensesString);
 
 
-// === Upload PDF files ===
-router.post("/uploadPDF/:id", (req, res, next) => {
-    if (!upload) return res.status(503).json({ message: "Upload service not ready" });
-    upload.single("pdf")(req, res, (err) => { // Use direct multer middleware
-        if (err) {
-            console.error("❌ Multer error during PDF upload:", err);
-            return res.status(500).json({ message: "PDF upload failed", error: err.message });
-        }
-        next();
-    });
-}, async (req, res) => {
-  if (!req.file?.buffer) return res.status(400).json({ message: "No file provided" });
+      const groupLeaderSignatureFile = files['groupLeaderSignature'] ? files['groupLeaderSignature'][0] : null;
+      const guideSignatureFile = files['guideSignature'] ? files['guideSignature'][0] : null;
+      const uploadedFiles = files['uploadedFiles'] || [];
 
-  const { id } = req.params;
-  const filename = `${Date.now()}-${req.file.originalname}`;
-  const uploadStream = gfs.openUploadStream(filename, {
-    contentType: req.file.mimetype,
-  });
-  uploadStream.end(req.file.buffer);
+      // Function to upload a single file to GridFS
+      const uploadFile = async (file) => {
+        if (!file) return null;
+        return new Promise((resolve, reject) => {
+          const uploadStream = gfs.openUploadStream(file.originalname, {
+            contentType: file.mimetype,
+          });
+          uploadStream.end(file.buffer);
+          uploadStream.on('finish', () => {
+            uploadedFileIds.push(uploadStream.id); // Add to rollback list
+            resolve(uploadStream.id);
+          });
+          uploadStream.on('error', reject);
+        });
+      };
+    // Initial status history entry for submission
+      const initialStatusHistory = {
+          status: 'pending',
+          date: new Date(),
+          remark: 'Form submitted by student.',
+          changedBy: svvNetId, // Assuming svvNetId is the submitter
+          changedByRole: 'Student', // Assuming the submitter is a student
+      };
+      const groupLeaderSignatureId = groupLeaderSignatureFile ? await uploadFile(groupLeaderSignatureFile) : null;
+      const guideSignatureId = guideSignatureFile ? await uploadFile(guideSignatureFile) : null;
+      const uploadedFileIdsFromGridFS = uploadedFiles.length > 0 ? await Promise.all(uploadedFiles.map(uploadFile)) : [];
 
-  try {
-    const fileId = await new Promise((resolve, reject) => {
-        uploadStream.on("finish", () => {
-            console.log(`✅ PDF upload stream finished for file ID: ${uploadStream.id}`);
-            resolve(uploadStream.id);
-        });
-        uploadStream.on("error", (err) => {
-            console.error(`❌ GridFS upload stream error for PDF (${req.file?.originalname || 'unknown'}):`, err);
-            reject(err);
-        });
-    });
+      const newForm = new UG2Form({
+        svvNetId,
+        projectTitle,
+        projectDescription,
+        utility,
+        receivedFinance,
+        financeDetails: receivedFinance ? financeDetails : undefined, // Conditionally set
+        guideDetails,
+        students,
+        expenses,
+        totalBudget,
+        groupLeaderSignatureId,
+        guideSignatureId,
+        uploadedFilesIds: uploadedFileIdsFromGridFS,
+        status: 'pending', // Default status
+        submittedAt: new Date(),
+        statusHistory: [initialStatusHistory],
+      });
 
-    // Add log before update
-    console.log(`Attempting to save PDF fileId (${fileId}) to formId (${id}).`);
-    await UG2Form.findByIdAndUpdate(id, { $addToSet: { uploadedFilesIds: fileId } });
-    console.log(`✅ PDF fileId (${fileId}) saved to formId (${id}).`);
-    res.json({ message: "PDF uploaded", fileId });
-  } catch (error) {
-      console.error("❌ Error in PDF upload route:", error);
-      res.status(500).json({ message: "Internal server error during PDF upload." });
-  }
-});
+      await newForm.save();
+      uploadedFileIds.length = 0; // Clear rollback list upon successful save
 
-// === Upload ZIP file (only one allowed) ===
-router.post("/uploadZip/:id", (req, res, next) => {
-    if (!upload) return res.status(503).json({ message: "Upload service not ready" });
-    upload.single("zip")(req, res, (err) => { // Use direct multer middleware
-        if (err) {
-            console.error("❌ Multer error during ZIP upload:", err);
-            return res.status(500).json({ message: "ZIP upload failed", error: err.message });
-        }
-        next();
-    });
-}, async (req, res) => {
-  if (!req.file?.buffer) return res.status(400).json({ message: "No file" });
+      // Send email notification on successful submission
+      const studentEmail = svvNetId.includes('@') ? svvNetId : `${svvNetId}@somaiya.edu`;
+      if (process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true') {
+        try {
+          await sendEmail(
+            studentEmail,
+            'UG-2 Form Submission Confirmation',
+            `Dear student,\n\nYour UG-2 form for project "${newForm.projectTitle}" has been submitted successfully.\nForm ID: ${newForm._id}\n\nRegards,\nYour University`
+          );
+          console.log(`Email sent for UG-2 form submission to ${studentEmail}`);
+        } catch (emailError) {
+          console.error(`Failed to send email for UG-2 form submission to ${studentEmail}:`, emailError);
+        }
+      }
+      
+      res.status(201).json({ message: 'UG-2 form submitted successfully!', id: newForm._id });
 
-  const { id } = req.params;
-  const filename = `${Date.now()}-${req.file.originalname}`;
-  const stream = gfs.openUploadStream(filename, { contentType: req.file.mimetype });
-  stream.end(req.file.buffer);
+    } catch (error) {
+      console.error('❌ UG-2 Form submission error:', error);
 
-  try {
-    const fileId = await new Promise((resolve, reject) => {
-        stream.on("finish", () => {
-            console.log(`✅ ZIP upload stream finished for file ID: ${stream.id}`);
-            resolve(stream.id);
-        });
-        stream.on("error", (err) => {
-            console.error(`❌ GridFS upload stream error for ZIP (${req.file?.originalname || 'unknown'}):`, err);
-            reject(err);
-        });
-    });
+      // Rollback: Delete uploaded files if an error occurred during form processing or saving
+      for (const fileId of uploadedFileIds) {
+        if (fileId && gfs) {
+          try {
+            await gfs.delete(new mongoose.Types.ObjectId(fileId));
+            console.log(`🧹 Deleted uploaded file due to error: ${fileId}`);
+          } catch (deleteErr) {
+            console.error(`❌ Failed to delete file ${fileId} during rollback:`, deleteErr.message);
+          }
+        }
+      }
 
-    const form = await UG2Form.findById(id);
-    if (form?.zipFileId) { // Use optional chaining for safety
-        console.log(`🗑️ Deleting old ZIP file ${form.zipFileId} for form ${id}`);
-        await deleteGridFSFile(form.zipFileId);
-    }
+      res.status(500).json({ message: "Error submitting UG-2 form.", error: error.message });
+    }
+  });
 
-    console.log(`Attempting to save ZIP fileId (${fileId}) to formId (${id}).`);
-    await UG2Form.findByIdAndUpdate(id, { zipFileId: fileId });
-    console.log(`✅ ZIP fileId (${fileId}) saved to formId (${id}).`);
-    res.json({ message: "ZIP uploaded", fileId });
-  } catch (error) {
-      console.error("❌ Error in ZIP upload route:", error);
-      res.status(500).json({ message: "Internal server error during ZIP upload." });
-  }
-});
 
-// === Upload Signatures ===
-router.post("/uploadSignature/:id/:type", (req, res, next) => {
-    if (!upload) return res.status(503).json({ message: "Upload service not ready" });
-    upload.single("sig")(req, res, (err) => { // Use direct multer middleware
-        if (err) {
-            console.error(`❌ Multer error during ${req.params.type} signature upload:`, err);
-            return res.status(500).json({ message: `${req.params.type} signature upload failed`, error: err.message });
-        }
-        next();
-    });
-}, async (req, res) => {
-  const validTypes = ["guide", "groupLeader"];
-  const type = req.params.type;
-  if (!validTypes.includes(type)) {
-    return res.status(400).json({ message: "Invalid signature type" });
-  }
-  if (!req.file?.buffer) return res.status(400).json({ message: "No file" });
+  // 🔄 PUT /:formId/review - Update UG-2 Form Review Status and Remarks
+  router.put("/:formId/review", async (req, res) => { // Renamed from formId to match frontend
+    const { status, remarks } = req.body;
+    const { formId } = req.params; // Destructure formId
 
-  const filename = `${Date.now()}-${req.file.originalname}`;
-  const stream = gfs.openUploadStream(filename, { contentType: req.file.mimetype });
-  stream.end(req.file.buffer);
+    try {
+      const form = await UG2Form.findById(formId); // Use formId
+      if (!form) return res.status(404).json({ message: "Not found" });
+     const oldStatus = form.status; // Store old status for history
 
-  try {
-    const fileId = await new Promise((resolve, reject) => {
-        stream.on("finish", () => {
-            console.log(`✅ ${type} signature upload stream finished for file ID: ${stream.id}`);
-            resolve(stream.id);
-        });
-        stream.on("error", (err) => {
-            console.error(`❌ GridFS upload stream error for ${type} signature (${req.file?.originalname || 'unknown'}):`, err);
-            reject(err);
-        });
-    });
+      form.status = status || form.status;
+      form.remarks = remarks || form.remarks;
 
-    const field = type === "guide" ? "guideSignatureId" : "groupLeaderSignatureId";
-    const form = await UG2Form.findById(req.params.id);
-    if (form?.[field]) { // Use optional chaining for safety
-        console.log(`🗑️ Deleting old ${type} signature ${form[field]} for form ${req.params.id}`);
-        await deleteGridFSFile(form[field]);
-    }
+      // Add entry to statusHistory
+      form.statusHistory.push({
+          status: form.status, // The new status
+          date: new Date(),
+          remark: remarks || 'Status updated', // Use provided remarks or a default
+          changedBy: changedBy || 'System', // User who made the change or 'System'
+          changedByRole: changedByRole || 'N/A', // Role of the user or 'N/A'
+      });
+      await form.save();
 
-    console.log(`Attempting to save ${type} signature fileId (${fileId}) to formId (${req.params.id}).`);
-    await UG2Form.findByIdAndUpdate(req.params.id, { [field]: fileId });
-    console.log(`✅ ${type} signature fileId (${fileId}) saved to formId (${req.params.id}).`);
-    res.json({ message: `${type} signature uploaded`, fileId });
-  } catch (error) {
-      console.error(`❌ Error in ${type} signature upload route:`, error);
-      res.status(500).json({ message: `Internal server error during ${type} signature upload.` });
-  }
-});
+      // Send email notification on form status update
+      const studentEmail = form.svvNetId.includes('@') ? form.svvNetId : `${form.svvNetId}@somaiya.edu`;
+      if (process.env.ENABLE_EMAIL_NOTIFICATIONS === 'true') {
+        try {
+          await sendEmail(
+            studentEmail,
+            `UG-2 Form Status Update: ${form.projectTitle}`,
+            `Dear student,\n\nYour UG-2 form for project "${form.projectTitle}" (ID: ${form._id}) has been updated.\nNew Status: ${form.status}\nRemarks: ${form.remarks || 'No remarks provided.'}\n\nRegards,\nYour University`
+          );
+          console.log(`Email sent for UG-2 form status update to ${studentEmail}`);
+        } catch (emailError) {
+          console.error(`Failed to send email for UG-2 form status update to ${studentEmail}:`, emailError);
+        }
+      }
 
-// === Fetch single UG2 form with URLs ===
-router.get("/:id", async (req, res) => {
-  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: "Invalid ID" });
-  try {
-    const form = await UG2Form.findById(req.params.id);
-    if (!form) return res.status(404).json({ message: "Not found" });
-    const full = await populateFormWithFileDetails(form);
-    res.json(full);
-  } catch (error) {
-      console.error("❌ Error fetching UG2 form by ID:", error);
-      res.status(500).json({ message: "Error fetching form data." });
-  }
-});
+      console.log(`✅ UG-2 form ${formId} reviewed. Status: ${status}, Remarks: ${remarks}`);
+      res.status(200).json({ message: "Review updated" });
+    } catch (error) {
+      console.error("❌ Error reviewing UG-2 form:", error);
+      res.status(500).json({ message: "Error reviewing form." });
+    }
+  });
 
-// === Fetch pending forms ===
-router.get("/pending", async (req, res) => {
-  try {
-    const forms = await UG2Form.find({ status: "pending" });
-    const full = await Promise.all(forms.map(populateFormWithFileDetails)); // populateFormWithFileDetails already handles errors internally
-    res.json(full);
-  } catch (error) {
-      console.error("❌ Error fetching pending UG2 forms:", error);
-      res.status(500).json({ message: "Error fetching pending forms." });
-  }
-});
+  // === Serve files from GridFS ===
+  router.get("/uploads/:fileId", async (req, res) => {
+    const { fileId } = req.params;
+    // Check if gfs is initialized and fileId is a valid ObjectId
+    if (!gfs || !mongoose.Types.ObjectId.isValid(fileId)) {
+      return res.status(400).send("Invalid file ID or GridFS not initialized.");
+    }
 
-// === Fetch by user (svvNetId) ===
-router.get("/user/:svvNetId", async (req, res) => {
-  try {
-    const forms = await UG2Form.find({ svvNetId: req.params.svvNetId });
-    if (!forms.length) return res.status(404).json({ message: "No forms found for this user." });
-    const full = await Promise.all(forms.map(populateFormWithFileDetails));
-    res.json(full);
-  } catch (error) {
-      console.error("❌ Error fetching UG2 forms by user:", error);
-      res.status(500).json({ message: "Error fetching user forms." });
-  }
-});
+    try {
+      const stream = gfs.openDownloadStream(new mongoose.Types.ObjectId(fileId));
 
-// === Clear PDFs ===
-router.put("/clearPdfs/:id", async (req, res) => {
-  try {
-    const form = await UG2Form.findById(req.params.id);
-    if (!form) return res.status(404).json({ message: "Not found" });
-    await Promise.all(form.uploadedFilesIds.map(deleteGridFSFile));
-    form.uploadedFilesIds = [];
-    await form.save();
-    res.json({ message: "PDFs cleared" });
-  } catch (error) {
-      console.error("❌ Error clearing PDFs:", error);
-      res.status(500).json({ message: "Error clearing PDFs." });
-  }
-});
+      stream.on("file", (file) => {
+        res.set("Content-Type", file.contentType || "application/octet-stream");
+        res.set("Content-Disposition", `inline; filename="${file.filename}"`);
+      });
 
-// === Clear ZIP ===
-router.put("/clearZip/:id", async (req, res) => {
-  try {
-    const form = await UG2Form.findById(req.params.id);
-    if (!form) return res.status(404).json({ message: "Not found" });
-    if (form.zipFileId) await deleteGridFSFile(form.zipFileId);
-    form.zipFileId = undefined; // Using undefined will remove the field from the document
-    await form.save();
-    res.json({ message: "ZIP cleared" });
-  } catch (error) {
-      console.error("❌ Error clearing ZIP:", error);
-      res.status(500).json({ message: "Error clearing ZIP." });
-  }
-});
+      stream.on("error", (err) => {
+        if (err.message.includes("File not found")) {
+          console.error(`❌ File ${fileId} not found in GridFS.`);
+          return res.status(404).send('File not found in GridFS.');
+        }
+        console.error(`❌ Error streaming file ${fileId}:`, err);
+        res.status(500).json({ message: "Error streaming file." });
+      });
 
-// === Clear Signatures ===
-router.put("/clearSignature/:id/:type", async (req, res) => {
-  const { id, type } = req.params;
-  try {
-    const form = await UG2Form.findById(id);
-    if (!form) return res.status(404).json({ message: "Not found" });
+      stream.pipe(res);
+    } catch (error) {
+      console.error(`Error serving file ${fileId}:`, error);
+      res.status(500).json({ message: "Server error serving file." });
+    }
+  });
 
-    let field, fid;
-    if (type === "guide") {
-      field = "guideSignatureId";
-      fid = form[field];
-    } else if (type === "groupLeader") {
-      field = "groupLeaderSignatureId";
-      fid = form[field];
-    } else {
-      return res.status(400).json({ message: "Invalid signature type" });
-    }
-
-    if (fid) {
-      await deleteGridFSFile(fid);
-      form[field] = undefined;
-      await form.save();
-    }
-    res.json({ message: `${type} signature cleared` });
-  } catch (error) {
-      console.error(`❌ Error clearing ${type} signature:`, error);
-      res.status(500).json({ message: `Error clearing ${type} signature.` });
-  }
-});
-
-// === Faculty review ===
-router.put("/faculty-review/:formId", async (req, res) => { // Changed param name to formId to match frontend
-  const { status, remarks } = req.body;
-  const { formId } = req.params; // Destructure formId
-
-  try {
-    const form = await UG2Form.findById(formId); // Use formId
-    if (!form) return res.status(404).json({ message: "Not found" });
-
-    form.status = status || form.status;
-    form.remarks = remarks || form.remarks;
-    await form.save();
-
-    console.log(`✅ UG-2 form ${formId} reviewed. Status: ${status}, Remarks: ${remarks}`);
-    res.status(200).json({ message: "Review updated" });
-  } catch (error) {
-      console.error("❌ Error reviewing UG-2 form:", error);
-      res.status(500).json({ message: "Error reviewing form." });
-  }
-});
-
-// === Serve files from GridFS ===
-router.get("/uploads/:fileId", async (req, res) => {
-  const { fileId } = req.params;
-  if (!gfs || !mongoose.Types.ObjectId.isValid(fileId)) {
-    return res.status(400).send("Invalid file ID");
-  }
-
-  const stream = gfs.openDownloadStream(new mongoose.Types.ObjectId(fileId));
-
-  stream.on("file", (file) => {
-    res.set("Content-Type", file.contentType || "application/octet-stream");
-    res.set("Content-Disposition", `inline; filename="${file.filename}"`);
-  });
-
-  stream.on("error", (err) => {
-    if (err.message.includes("File not found")) return res.status(404).send("Not found");
-    console.error("❌ GridFS download error:", err);
-    res.status(500).send("Server error");
-  });
-
-  stream.pipe(res);
-});
+}); // End of conn.once("open", ...) block
 
 export default router;

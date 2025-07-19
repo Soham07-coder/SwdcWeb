@@ -51,7 +51,13 @@ const pg2aFormSchema = new mongoose.Schema({
     studentSignature: { type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true },
     guideSignature: { type: mongoose.Schema.Types.ObjectId, ref: 'pg2afiles.files', required: true },
   },
-
+  statusHistory: [{
+    status: String, // This will store the DETAILED status names (e.g., 'PENDING_HOD_APPROVAL', 'HOD_APPROVED', etc.)
+    date: { type: Date, default: Date.now },
+    remark: String, // Optional: Specific remarks for this status change
+    changedBy: String, // To store svvNetId of the user who changed the status
+    changedByRole: String // To store the role of the user who changed the status
+  }],
   status: {
     type: String,
     enum: ['pending', 'approved', 'rejected', 'under Review'],

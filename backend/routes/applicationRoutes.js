@@ -17,6 +17,28 @@ const conn = mongoose.connection;
 
 let gfsBucket; // Consistent naming for GridFSBucket instance
 
+const fileBaseUrlMapper = {
+    "UG_1": "/api/ug1form/uploads/files",
+    "UG_2": "/api/ug2form/uploads/files",
+    "UG_3_A": "/api/ug3aform/file", 
+    "UG_3_B": "/api/ug3bform/file",
+    "PG_1": "/api/pg1form/uploads/files",
+    "PG_2_A": "/api/pg2aform/file",
+    "PG_2_B": "/api/pg2bform/files",
+    "R1": "/api/r1form/files",
+};
+
+const bucketMapper = {
+    "UG_1": "uploads",
+    "UG_2": "uploads",
+    "UG_3_A": "uploads",
+    "UG_3_B": "ug3bFiles", // UG3B has a dedicated bucket
+    "PG_1": "pg1files",
+    "PG_2_A": "pg2afiles",
+    "PG_2_B": "pg2bfiles",
+    "R1": "r1files",
+};
+
 // Initialize GridFSBucket once the MongoDB connection is open
 conn.once("open", () => {
     // IMPORTANT: Ensure this bucketName matches where your files are actually stored.
@@ -32,50 +54,99 @@ conn.once("open", () => {
  * to find file metadata by ID and then constructs a URL for serving the file.
  * @param {mongoose.Types.ObjectId | string} fileId - The GridFS file ID.
  * @param {string} baseUrlForServingFile - The base URL for serving files from this endpoint (e.g., "/api/application/file").
+ * @param {Object} gfsBucket - The GridFS bucket instance for file operations.
  * @returns {Promise<{id: string, originalName: string, filename: string, mimetype: string, size: number, url: string} | null>} - File details or null.
  */
-const getFileDetailsAndUrl = async (fileId, baseUrlForServingFile) => {
-    // Validate fileId before attempting to convert to ObjectId
-    if (!gfsBucket || !fileId || !mongoose.Types.ObjectId.isValid(fileId)) {
-        console.warn(`Invalid or missing fileId for GridFS lookup: ${fileId}`);
+const getFileDetailsAndUrl = async (fileId, baseUrlForServingFile, formType, mongooseConnection) => {
+    //console.log(`\n🔍 getFileDetailsAndUrl Called`);
+    console.log(`🔑 Received fileId: ${fileId}`);
+    console.log(`🌐 Base URL: ${baseUrlForServingFile}`);
+    console.log(`🗂️ Form Type: ${formType}`);
+
+    if (!fileId) {
+        console.warn(`❌ fileId is null/undefined for baseUrl: ${baseUrlForServingFile}.`);
         return null;
     }
+
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(fileId);
+    console.log(`✅ ObjectId valid: ${isValidObjectId}`);
+
+    if (!isValidObjectId) {
+        console.warn(`❌ Invalid ObjectId format: ${fileId}`);
+        return null;
+    }
+
+    // Select correct bucket based on form type
+    const bucketName = bucketMapper[formType] || 'uploads';
+    console.log(`🪣 Using GridFS bucket: ${bucketName}`);
+
+    const gfsBucket = new mongoose.mongo.GridFSBucket(mongooseConnection.db, { bucketName });
+
     try {
-        const file = await gfsBucket.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
-        if (file.length > 0) {
-            const fileData = file[0];
+        //console.log(`🔍 Searching in GridFS with ID: ${fileId}...`);
+        const files = await gfsBucket.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
+
+        //console.log(`📂 Files found:`, files);
+
+        if (files.length > 0) {
+            const fileData = files[0];
+            //console.log(`✅ File found: "${fileData.filename}" with ID: "${fileId}".`);
+
             return {
                 id: fileData._id.toString(),
-                originalName: fileData.metadata?.originalName || fileData.filename, // Prefer metadata.originalName if available
+                originalName: fileData.metadata?.originalName || fileData.filename,
                 filename: fileData.filename,
                 mimetype: fileData.contentType,
                 size: fileData.length,
-                // IMPORTANT: Construct URL using the provided baseUrlForServingFile
-                url: `${baseUrlForServingFile}/${fileData._id.toString()}`,
+                url: `${baseUrlForServingFile}/${fileData._id.toString()}?bucket=${bucketName}`, // ✅ Attach bucket name in URL
             };
+        } else {
+            console.warn(`❌ File with ID "${fileId}" not found in the GridFS bucket.`);
         }
     } catch (error) {
-        console.error(`Error fetching file details for ID ${fileId}:`, error);
+        console.error(`🚨 Error while fetching file with ID "${fileId}":`, error);
     }
+
     return null;
 };
-
 /**
  * Helper: Processes a raw form object to include file URLs and standardizes fields for display.
- * @param {Object} form - The raw Mongoose document (after .lean())
+ * @param {Object} form - The raw Mongoose document (after .lean() or .toObject())
  * @param {string} formType - The type of the form (e.g., "UG_1", "UG_2", "UG_3_A", "R1")
  * @param {string} [userBranchFromRequest] - Optional: The branch of the currently logged-in user, passed from the frontend.
+ * @param {Object} gfsBucket - The GridFS bucket instance for file operations.
  * @returns {Promise<Object>} - The processed form object with URLs and standardized fields.
  */
-const processFormForDisplay = async (form, formType, userBranchFromRequest) => { // Added userBranchFromRequest parameter
-   let processedForm = { ...form };
+const processFormForDisplay = async (form, formType, userBranchFromRequest,gfsBucket, userRole) => {
+    let processedForm = { ...form };
 
-    processedForm._id = form._id.toString();
+    const ACCESS_LEVELS = {
+        STUDENT: 'student',
+        VALIDATOR: 'validator',
+        ADMIN: 'admin',
+        PRINCIPAL: 'principal',
+        HOD: 'hod',
+        INSTITUTE_COORDINATOR: 'institute coordinator',
+        DEPARTMENT_COORDINATOR: 'department coordinator' // <-- ADD THIS
+    };
+
+    const isStudent = (userRole || "").toLowerCase() === "student";
+
+    const getObjectIdString = (idField) => {
+        if (typeof idField === 'string') return idField;
+        if (idField && typeof idField === 'object' && idField.$oid) return idField.$oid;
+        if (idField && mongoose.Types.ObjectId.isValid(idField)) return idField.toString();
+        return null;
+    };
+
+
+    processedForm._id = form._id?.$oid || form._id?.toString() || form._id;
+
     processedForm.topic = form.projectTitle || form.paperTitle || form.topic || "Untitled Project";
     processedForm.name = form.studentName || form.applicantName || (form.students?.[0]?.name) || (form.studentDetails?.[0]?.studentName) || "N/A";
     processedForm.branch = userBranchFromRequest || form.branch || form.department || (form.students?.[0]?.branch) || (form.studentDetails?.[0]?.branch) || "N/A";
 
-    processedForm.submitted = form.createdAt || form.submittedAt || new Date();
+    processedForm.submitted = form.createdAt?.$date || form.createdAt || form.submittedAt || new Date();
     if (typeof processedForm.submitted === 'string' && !isNaN(new Date(processedForm.submitted))) {
         processedForm.submitted = new Date(processedForm.submitted);
     } else if (!(processedForm.submitted instanceof Date)) {
@@ -85,13 +156,15 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
     processedForm.status = form.status || "pending";
     processedForm.formType = formType;
 
-    const fileBaseUrl = `/api/application/file`;
+    const fileBaseUrl = fileBaseUrlMapper[formType] || "/api/uploads/files";
 
     processedForm.groupLeaderSignature = null;
     processedForm.studentSignature = null;
     processedForm.guideSignature = null;
     processedForm.hodSignature = null;
     processedForm.sdcChairpersonSignature = null;
+    processedForm.paperCopy = null;
+    processedForm.additionalDocuments = [];
     processedForm.uploadedFiles = [];
     processedForm.pdfFileUrls = [];
     processedForm.zipFile = null;
@@ -102,33 +175,72 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
     processedForm.guideNames = [];
     processedForm.employeeCodes = [];
 
-    // --- Specific file and field processing based on formType ---
+    const getFile = async (id) => {
+        if (isStudent) {
+            console.log(`File access denied for student role for ID: ${id}`);
+            return null;
+        }
+        const isValid = mongoose.Types.ObjectId.isValid(id);
+        console.log(`🔎 getFile - ID: ${id}, Valid: ${isValid}`);
+        return await getFileDetailsAndUrl(id, fileBaseUrl, formType, mongoose.connection);
+    };
+
+    const getMultipleFiles = async (fileList) => {
+        if (isStudent) {
+            console.log(`Multiple file access denied for student role for file list.`);
+            return [];
+        }
+
+        const filePromises = fileList.map(fileMeta => {
+            if (!fileMeta) return null;
+
+            // Case: { id: ObjectId }
+            if (fileMeta.id && typeof fileMeta.id === 'string') {
+                return getFile(fileMeta.id);
+            }
+
+            // Case: raw ObjectId string
+            if (typeof fileMeta === 'string') {
+                return getFile(fileMeta);
+            }
+
+            // Case: fileMeta is an ObjectId directly
+            if (mongoose.Types.ObjectId.isValid(fileMeta)) {
+                return getFile(fileMeta.toString());
+            }
+
+            // Case: unknown format (log and ignore)
+            console.warn('⚠️ Unrecognized fileMeta format:', fileMeta);
+            return null;
+        });
+
+        return (await Promise.all(filePromises)).filter(Boolean);
+    };
+
     switch (formType) {
         case "UG_1":
             if (form.pdfFileIds && form.pdfFileIds.length > 0) {
-                const pdfFileDetailsPromises = form.pdfFileIds.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                processedForm.pdfFileUrls = (await Promise.all(pdfFileDetailsPromises)).filter(Boolean);
+                processedForm.pdfFileUrls = await getMultipleFiles(form.pdfFileIds);
             }
             if (form.groupLeaderSignatureId) {
-                processedForm.groupLeaderSignature = await getFileDetailsAndUrl(form.groupLeaderSignatureId, fileBaseUrl);
+                processedForm.groupLeaderSignature = await getFile(form.groupLeaderSignatureId);
             }
             if (form.guideSignatureId) {
-                processedForm.guideSignature = await getFileDetailsAndUrl(form.guideSignatureId, fileBaseUrl);
+                processedForm.guideSignature = await getFile(form.guideSignatureId);
             }
             processedForm.guideNames = form.guides ? form.guides.map(g => g.guideName || "") : [];
             processedForm.employeeCodes = form.guides ? form.guides.map(g => g.employeeCode || "") : [];
             break;
 
         case "UG_2":
-            if (form.groupLeaderSignature && form.groupLeaderSignature.fileId) {
-                processedForm.groupLeaderSignature = await getFileDetailsAndUrl(form.groupLeaderSignature.fileId, fileBaseUrl);
+            if (form.groupLeaderSignature?.fileId) {
+                processedForm.groupLeaderSignature = await getFile(form.groupLeaderSignature.fileId);
             }
-            if (form.guideSignature && form.guideSignature.fileId) {
-                processedForm.guideSignature = await getFileDetailsAndUrl(form.guideSignature.fileId, fileBaseUrl);
+            if (form.guideSignature?.fileId) {
+                processedForm.guideSignature = await getFile(form.guideSignature.fileId);
             }
             if (form.uploadedFiles && form.uploadedFiles.length > 0) {
-                const uploadedFileDetailsPromises = form.uploadedFiles.map(fileMeta => getFileDetailsAndUrl(fileMeta.fileId, fileBaseUrl));
-                processedForm.uploadedFiles = (await Promise.all(uploadedFileDetailsPromises)).filter(Boolean);
+                processedForm.uploadedFiles = await getMultipleFiles(form.uploadedFiles.map(f => f.fileId));
             }
             processedForm.projectDescription = form.projectDescription;
             processedForm.utility = form.utility;
@@ -142,16 +254,18 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
             break;
 
         case "UG_3_A":
-            if (form.uploadedImage && form.uploadedImage.fileId) {
-                processedForm.uploadedImage = await getFileDetailsAndUrl(form.uploadedImage.fileId, fileBaseUrl);
-            }
+            const uploadedImageId = getObjectIdString(form.uploadedImage?.fileId);
+            if (uploadedImageId) processedForm.uploadedImage = await getFile(uploadedImageId);
+
             if (form.uploadedPdfs && form.uploadedPdfs.length > 0) {
-                const pdfDetailsPromises = form.uploadedPdfs.map(pdfMeta => getFileDetailsAndUrl(pdfMeta.fileId, fileBaseUrl));
-                processedForm.uploadedPdfs = (await Promise.all(pdfDetailsPromises)).filter(Boolean);
+                processedForm.uploadedPdfs = await getMultipleFiles(form.uploadedPdfs.map(f => f.fileId));
             }
-            if (form.uploadedZipFile && form.uploadedZipFile.fileId) {
-                processedForm.zipFile = await getFileDetailsAndUrl(form.uploadedZipFile.fileId, fileBaseUrl);
+
+            const uploadedZipFileId = getObjectIdString(form.uploadedZipFile?.fileId || form.uploadedZipFile?.id);
+            if (uploadedZipFileId) {
+                processedForm.zipFile = await getFile(uploadedZipFileId);
             }
+
             processedForm.organizingInstitute = form.organizingInstitute;
             processedForm.projectTitle = form.projectTitle;
             processedForm.students = form.students;
@@ -160,21 +274,26 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
             processedForm.bankDetails = form.bankDetails;
             break;
 
-         case "UG_3_B":
-            if (form.uploadedPdfs && form.uploadedPdfs.length > 0) {
-                const pdfDetails = await Promise.all(form.uploadedPdfs.map(fileMeta => {
-                    if (fileMeta?.fileId) return getFileDetailsAndUrl(fileMeta.fileId, fileBaseUrl);
-                }));
-                processedForm.uploadedPdfs = pdfDetails.filter(Boolean);
+        case "UG_3_B":
+            if (form.pdfDocuments && form.pdfDocuments.length > 0) {
+                processedForm.pdfFileUrls = await getMultipleFiles(form.pdfDocuments);
             }
-            if (form.uploadedZipFile?.fileId) {
-                processedForm.zipFile = await getFileDetailsAndUrl(form.uploadedZipFile.fileId, fileBaseUrl);
+            if (form.zipFiles && form.zipFiles.length > 0) {
+                const zipFiles = await getMultipleFiles(form.zipFiles);
+                processedForm.zipFile = zipFiles[0] || null;
             }
-            if (form.groupLeaderSignature?.fileId) {
-                processedForm.groupLeaderSignature = await getFileDetailsAndUrl(form.groupLeaderSignature.fileId, fileBaseUrl);
+            if (form.groupLeaderSignature?.id) {
+                processedForm.groupLeaderSignature = await getFile(form.groupLeaderSignature.id);
+                processedForm.studentSignature = processedForm.groupLeaderSignature;
             }
-            if (form.guideSignature?.fileId) {
-                processedForm.guideSignature = await getFileDetailsAndUrl(form.guideSignature.fileId, fileBaseUrl);
+            if (form.guideSignature?.id) {
+                processedForm.guideSignature = await getFile(form.guideSignature.id);
+            }
+            if (form.paperCopy?.id) {
+                processedForm.paperCopy = await getFile(form.paperCopy.id);
+            }
+            if (form.additionalDocuments && form.additionalDocuments.length > 0) {
+                processedForm.additionalDocuments = await getMultipleFiles(form.additionalDocuments);
             }
 
             processedForm.students = form.students || [];
@@ -190,14 +309,8 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
 
         case "PG_1":
             processedForm.name = form.studentName || "N/A";
-            processedForm.topic =
-                form.sttpTitle ||        // ← your STTP/Workshop title
-                form.projectTitle ||
-                form.paperTitle ||
-                form.topic ||
-                "Untitled Project";
+            processedForm.topic = form.sttpTitle || form.projectTitle || form.paperTitle || form.topic || "Untitled Project";
 
-            // Branch handling is already done above using userBranchFromRequest
             processedForm.department = form.department || "N/A";
             processedForm.guideName = form.guideName || "N/A";
             processedForm.employeeCode = form.employeeCode || "N/A";
@@ -210,30 +323,29 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
             processedForm.mobileNo = form.mobileNo || "N/A";
             processedForm.registrationFee = form.registrationFee || "N/A";
 
-            // File processing
             if (form.files) {
-                if (form.files.studentSignature) {
-                    processedForm.studentSignature = await getFileDetailsAndUrl(form.files.studentSignature, fileBaseUrl);
+                if (form.files.receiptCopy?.id) {
+                    processedForm.studentSignature = await getFile(form.files.receiptCopy.id);
                 }
-                if (form.files.guideSignature) {
-                    processedForm.guideSignature = await getFileDetailsAndUrl(form.files.guideSignature, fileBaseUrl);
+                if (form.files.guideSignature?.id) {
+                    processedForm.guideSignature = await getFile(form.files.guideSignature.id);
                 }
-                if (form.files.bills && form.files.bills.length > 0) {
-                    const billFilePromises = form.files.bills.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                    processedForm.bills = (await Promise.all(billFilePromises)).filter(Boolean);
+                if (form.files.additionalDocuments && form.files.additionalDocuments.length > 0) {
+                    processedForm.additionalDocuments = await getMultipleFiles(form.files.additionalDocuments);
                 }
-                if (form.files.zips && form.files.zips.length > 0) {
-                    const zipFilePromises = form.files.zips.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                    processedForm.zipFile = (await Promise.all(zipFilePromises)).filter(Boolean)[0] || null;
+                if (form.files.pdfDocuments && form.files.pdfDocuments.length > 0) {
+                    processedForm.pdfFileUrls = await getMultipleFiles(form.files.pdfDocuments);
+                }
+                if (form.files.zipFiles && form.files.zipFiles.length > 0) {
+                    const zipFiles = await getMultipleFiles(form.files.zipFiles);
+                    processedForm.zipFile = zipFiles[0] || null;
                 }
             }
             break;
+
         case "PG_2_A":
             processedForm.topic = form.projectTitle || form.paperTitle || form.topic || "Untitled Project";
             processedForm.name = form.studentDetails?.[0]?.name || "N/A";
-            // The general branch line above will handle this unless explicitly overridden here.
-            // processedForm.branch = userBranchFromRequest || form.department || (form.studentDetails?.[0]?.branch) || "N/A";
-
             processedForm.department = form.department || "NA";
             processedForm.studentDetails = form.studentDetails || [];
             processedForm.expenses = form.expenses || [];
@@ -244,53 +356,44 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
 
             if (form.files) {
                 if (form.files.bills && form.files.bills.length > 0) {
-                    const billFilePromises = form.files.bills.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                    processedForm.bills = (await Promise.all(billFilePromises)).filter(Boolean);
-                } else {
-                    processedForm.bills = [];
+                    processedForm.bills = await getMultipleFiles(form.files.bills);
                 }
                 if (form.files.zips && form.files.zips.length > 0) {
-                    const zipFilePromises = form.files.zips.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                    processedForm.zipFile = (await Promise.all(zipFilePromises)).filter(Boolean)[0] || null;
-                } else {
-                    processedForm.zipFile = null;
+                    const zipFiles = await getMultipleFiles(form.files.zips);
+                    processedForm.zipFile = zipFiles[0] || null;
                 }
                 if (form.files.studentSignature) {
-                    processedForm.studentSignature = await getFileDetailsAndUrl(form.files.studentSignature, fileBaseUrl);
+                    processedForm.studentSignature = await getFile(form.files.studentSignature);
                 }
                 if (form.files.guideSignature) {
-                    processedForm.guideSignature = await getFileDetailsAndUrl(form.files.guideSignature, fileBaseUrl);
+                    processedForm.guideSignature = await getFile(form.files.guideSignature);
                 }
                 if (form.files.groupLeaderSignature) {
-                    processedForm.groupLeaderSignature = await getFileDetailsAndUrl(form.files.groupLeaderSignature, fileBaseUrl);
+                    processedForm.groupLeaderSignature = await getFile(form.files.groupLeaderSignature);
                 }
             }
             break;
-            
+
         case "PG_2_B":
-            if (form.files) {
-                if (form.files.bills?.length > 0) {
-                    const bills = await Promise.all(form.files.bills.map(id => {
-                        if (id) return getFileDetailsAndUrl(id, fileBaseUrl);
-                    }));
-                    processedForm.bills = bills.filter(Boolean);
-                }
-                if (form.files.zips?.length > 0) {
-                    const zips = await Promise.all(form.files.zips.map(id => {
-                        if (id) return getFileDetailsAndUrl(id, fileBaseUrl);
-                    }));
-                    processedForm.zipFile = zips.filter(Boolean)[0] || null;
-                }
-                if (form.files.studentSignature) {
-                    processedForm.studentSignature = await getFileDetailsAndUrl(form.files.studentSignature, fileBaseUrl);
-                }
-                if (form.files.guideSignature) {
-                    processedForm.guideSignature = await getFileDetailsAndUrl(form.files.guideSignature, fileBaseUrl);
-                }
+            const groupSigId = getObjectIdString(form.groupLeaderSignature?.id);
+            if (groupSigId) {
+                processedForm.groupLeaderSignature = await getFile(groupSigId);
+                processedForm.studentSignature = processedForm.groupLeaderSignature;
+            }
+
+            const guideSigId = getObjectIdString(form.guideSignature?.id);
+            if (guideSigId) {
+                processedForm.guideSignature = await getFile(guideSigId);
+            }
+
+            if (form.additionalDocuments && form.additionalDocuments.length > 0) {
+                const additionalDocIds = form.additionalDocuments.map(doc => getObjectIdString(doc.id)).filter(Boolean);
+                processedForm.additionalDocuments = await getMultipleFiles(additionalDocIds);
             }
             processedForm.name = form.studentName || "N/A";
             processedForm.projectTitle = form.projectTitle;
             processedForm.guideName = form.guideName;
+            processedForm.coGuideName = form.coGuideName;
             processedForm.employeeCode = form.employeeCode;
             processedForm.yearOfAdmission = form.yearOfAdmission;
             processedForm.rollNo = form.rollNo;
@@ -300,32 +403,36 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
             processedForm.bankDetails = form.bankDetails || {};
             processedForm.authors = form.authors || [];
             processedForm.paperLink = form.paperLink;
+            processedForm.conferenceDate = form.conferenceDate;
+            processedForm.organization = form.organization;
+            processedForm.publisher = form.publisher;
+            processedForm.previousClaim = form.previousClaim;
+            processedForm.claimDate = form.claimDate;
+            processedForm.amountReceived = form.amountReceived;
+            processedForm.amountSanctioned = form.amountSanctioned;
             break;
-        case "R1":
-            // The general branch line above will handle this unless explicitly overridden here.
-            // processedForm.branch = userBranchFromRequest || form.branch || "N/A";
 
+        case "R1":
             if (form.studentSignatureFileId) {
-                processedForm.studentSignature = await getFileDetailsAndUrl(form.studentSignatureFileId, fileBaseUrl);
+                processedForm.studentSignature = await getFile(form.studentSignatureFileId);
             }
             if (form.guideSignatureFileId) {
-                processedForm.guideSignature = await getFileDetailsAndUrl(form.guideSignatureFileId, fileBaseUrl);
+                processedForm.guideSignature = await getFile(form.guideSignatureFileId);
             }
             if (form.hodSignatureFileId) {
-                processedForm.hodSignature = await getFileDetailsAndUrl(form.hodSignatureFileId, fileBaseUrl);
+                processedForm.hodSignature = await getFile(form.hodSignatureFileId);
             }
             if (form.sdcChairpersonSignatureFileId) {
-                processedForm.sdcChairpersonSignature = await getFileDetailsAndUrl(form.sdcChairpersonSignatureFileId, fileBaseUrl);
+                processedForm.sdcChairpersonSignature = await getFile(form.sdcChairpersonSignatureFileId);
             }
-            if (form.proofDocumentFileId) { // For a single proof document
-                processedForm.proofDocument = await getFileDetailsAndUrl(form.proofDocumentFileId, fileBaseUrl);
+            if (form.proofDocumentFileId) {
+                processedForm.proofDocument = await getFile(form.proofDocumentFileId);
             }
-            if (form.pdfFileIds && form.pdfFileIds.length > 0) { // For multiple PDF attachments
-                const pdfFileDetailsPromises = form.pdfFileIds.map(id => getFileDetailsAndUrl(id, fileBaseUrl));
-                processedForm.pdfFileUrls = (await Promise.all(pdfFileDetailsPromises)).filter(Boolean);
+            if (form.pdfFileIds && form.pdfFileIds.length > 0) {
+                processedForm.pdfFileUrls = await getMultipleFiles(form.pdfFileIds);
             }
             if (form.zipFileId) {
-                processedForm.zipFile = await getFileDetailsAndUrl(form.zipFileId, fileBaseUrl);
+                processedForm.zipFile = await getFile(form.zipFileId);
             }
 
             processedForm.coGuideName = form.coGuideName;
@@ -353,9 +460,10 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
             break;
 
         default:
-            console.warn(`No specific processing defined for form type: ${formType}. Returning raw form data with generic name/branch.`);
+            console.warn(`No specific processing defined for form type: ${formType}. Returning raw form data.`);
             break;
     }
+
     return processedForm;
 };
 // --- API Endpoints ---
@@ -364,34 +472,26 @@ const processFormForDisplay = async (form, formType, userBranchFromRequest) => {
  * @route GET /api/application/pending
  * @desc Fetch all pending applications from all form collections for the authenticated user
  * @access Private (requires authentication)
- * @queryParam {string} [userBranch] - Optional: The branch of the currently logged-in user.
- * @queryParam {string} svvNetId - Required: The svvNetId of the currently logged-in user.
  */
 router.get("/pending", async (req, res) => {
     try {
-        // Extract parameters from query
         const userBranch = req.query.userBranch;
-        const svvNetId = req.query.svvNetId;
-        // Validate svvNetId is provided
+        const svvNetId = req.query.svvNetId?.trim();
+
         if (!svvNetId) {
-            return res.status(400).json({ 
-                message: "svvNetId is required to fetch user-specific applications" 
+            return res.status(400).json({
+                message: "svvNetId is required to fetch user-specific applications"
             });
         }
-        // Create filter object for user-specific data
-        const userFilter = { 
+
+        const userFilter = {
             status: /^pending$/i,
-            svvNetId: svvNetId // Filter by the authenticated user's svvNetId
+            svvNetId: { $regex: `^${svvNetId}$`, $options: 'i' }
         };
+
         const [
-            ug1Forms,
-            ug2Forms,
-            ug3aForms,
-            ug3bForms,
-            pg1Forms,
-            pg2aForms,
-            pg2bForms,
-            r1Forms
+            ug1Forms, ug2Forms, ug3aForms, ug3bForms,
+            pg1Forms, pg2aForms, pg2bForms, r1Forms
         ] = await Promise.all([
             UG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             UGForm2.find(userFilter).sort({ createdAt: -1 }).lean(),
@@ -400,7 +500,7 @@ router.get("/pending", async (req, res) => {
             PG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2AForm.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2BForm.find(userFilter).sort({ createdAt: -1 }).lean(),
-            R1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
+            R1Form.find(userFilter).sort({ createdAt: -1 }).lean()
         ]);
 
         const results = await Promise.all([
@@ -411,7 +511,7 @@ router.get("/pending", async (req, res) => {
             ...pg1Forms.map(f => processFormForDisplay(f, "PG_1", userBranch)),
             ...pg2aForms.map(f => processFormForDisplay(f, "PG_2_A", userBranch)),
             ...pg2bForms.map(f => processFormForDisplay(f, "PG_2_B", userBranch)),
-            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch)),
+            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch))
         ]);
 
         res.json(results);
@@ -425,13 +525,11 @@ router.get("/pending", async (req, res) => {
  * @route GET /api/application/accepted
  * @desc Fetch all accepted applications for the authenticated user
  * @access Private (requires authentication)
- * @queryParam {string} [userBranch] - Optional: Branch of the user
- * @queryParam {string} svvNetId - Required: SVV Net ID of the user
  */
 router.get("/accepted", async (req, res) => {
     try {
         const userBranch = req.query.userBranch;
-        const svvNetId = req.query.svvNetId;
+        const svvNetId = req.query.svvNetId?.trim();
 
         if (!svvNetId) {
             return res.status(400).json({
@@ -440,19 +538,13 @@ router.get("/accepted", async (req, res) => {
         }
 
         const userFilter = {
-            status: { $in: [/^approved$/i, /^accepted$/i] }, // Accepts both words, case-insensitive
-            svvNetId: svvNetId
+            status: { $in: [/^approved$/i, /^accepted$/i] },
+            svvNetId: { $regex: `^${svvNetId}$`, $options: 'i' }
         };
 
         const [
-            ug1Forms,
-            ug2Forms,
-            ug3aForms,
-            ug3bForms,
-            pg1Forms,
-            pg2aForms,
-            pg2bForms,
-            r1Forms
+            ug1Forms, ug2Forms, ug3aForms, ug3bForms,
+            pg1Forms, pg2aForms, pg2bForms, r1Forms
         ] = await Promise.all([
             UG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             UGForm2.find(userFilter).sort({ createdAt: -1 }).lean(),
@@ -461,7 +553,7 @@ router.get("/accepted", async (req, res) => {
             PG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2AForm.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2BForm.find(userFilter).sort({ createdAt: -1 }).lean(),
-            R1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
+            R1Form.find(userFilter).sort({ createdAt: -1 }).lean()
         ]);
 
         const results = await Promise.all([
@@ -472,7 +564,7 @@ router.get("/accepted", async (req, res) => {
             ...pg1Forms.map(f => processFormForDisplay(f, "PG_1", userBranch)),
             ...pg2aForms.map(f => processFormForDisplay(f, "PG_2_A", userBranch)),
             ...pg2bForms.map(f => processFormForDisplay(f, "PG_2_B", userBranch)),
-            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch)),
+            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch))
         ]);
 
         res.json(results);
@@ -482,10 +574,15 @@ router.get("/accepted", async (req, res) => {
     }
 });
 
+/**
+ * @route GET /api/application/rejected
+ * @desc Fetch all rejected applications for the authenticated user
+ * @access Private (requires authentication)
+ */
 router.get("/rejected", async (req, res) => {
     try {
         const userBranch = req.query.userBranch;
-        const svvNetId = req.query.svvNetId;
+        const svvNetId = req.query.svvNetId?.trim();
 
         if (!svvNetId) {
             return res.status(400).json({
@@ -494,19 +591,13 @@ router.get("/rejected", async (req, res) => {
         }
 
         const userFilter = {
-            status: { $in: [/^rejected$/i, /^declined$/i] }, // Accept both terms
-            svvNetId: svvNetId
+            status: { $in: [/^rejected$/i, /^declined$/i] },
+            svvNetId: { $regex: `^${svvNetId}$`, $options: 'i' }
         };
 
         const [
-            ug1Forms,
-            ug2Forms,
-            ug3aForms,
-            ug3bForms,
-            pg1Forms,
-            pg2aForms,
-            pg2bForms,
-            r1Forms
+            ug1Forms, ug2Forms, ug3aForms, ug3bForms,
+            pg1Forms, pg2aForms, pg2bForms, r1Forms
         ] = await Promise.all([
             UG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             UGForm2.find(userFilter).sort({ createdAt: -1 }).lean(),
@@ -515,7 +606,7 @@ router.get("/rejected", async (req, res) => {
             PG1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2AForm.find(userFilter).sort({ createdAt: -1 }).lean(),
             PG2BForm.find(userFilter).sort({ createdAt: -1 }).lean(),
-            R1Form.find(userFilter).sort({ createdAt: -1 }).lean(),
+            R1Form.find(userFilter).sort({ createdAt: -1 }).lean()
         ]);
 
         const results = await Promise.all([
@@ -526,7 +617,7 @@ router.get("/rejected", async (req, res) => {
             ...pg1Forms.map(f => processFormForDisplay(f, "PG_1", userBranch)),
             ...pg2aForms.map(f => processFormForDisplay(f, "PG_2_A", userBranch)),
             ...pg2bForms.map(f => processFormForDisplay(f, "PG_2_B", userBranch)),
-            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch)),
+            ...r1Forms.map(f => processFormForDisplay(f, "R1", userBranch))
         ]);
 
         res.json(results);
@@ -549,14 +640,12 @@ router.get("/my-applications", async (req, res) => {
         const svvNetId = req.query.svvNetId;
 
         if (!svvNetId) {
-            return res.status(400).json({ 
-                message: "svvNetId is required to fetch user-specific applications" 
+            return res.status(400).json({
+                message: "svvNetId is required to fetch user-specific applications"
             });
         }
-
         // Filter for all applications by this user (any status)
-        const userFilter = { svvNetId: svvNetId };
-
+        const userFilter = { svvNetId: svvNetId }; // Assuming svvNetId is the field linking applications to users
         const [
             ug1Forms,
             ug2Forms,
@@ -596,26 +685,87 @@ router.get("/my-applications", async (req, res) => {
 });
 
 /**
- * @route GET /api/application/:id
- * @desc Fetch specific application by ID from all form collections (user must own the application)
+ * @route POST /api/application/:id
+ * @desc Fetch specific application by ID from all form collections (user must own OR be a validator)
  * @access Private (requires authentication)
- * @queryParam {string} [userBranch] - Optional: The branch of the currently logged-in user.
- * @queryParam {string} svvNetId - Required: The svvNetId of the currently logged-in user.
+ * @body {string} [userBranch] - Optional: The branch of the currently logged-in user.
+ * @body {string} svvNetId - Required: The svvNetId of the currently logged-in user.
+ * @body {string} role - Required: The role of the currently logged-in user (e.g., 'student', 'validator', 'admin').
  */
-router.get("/:id", async (req, res) => {
+router.post("/:id", async (req, res) => {
     try {
         const { id } = req.params;
-        const userBranch = req.query.userBranch;
-        const svvNetId = req.query.svvNetId;
+        // <<< Retrieve the role from the request body
+        // IMPORTANT SECURITY NOTE: In a production environment, 'svvNetId' and 'role'
+        // should be extracted from a securely authenticated user session (e.g., JWT payload),
+        // NOT directly from the request body as they can be easily spoofed by a client.
+        // For this exercise, we are assuming 'role' from the client is trustworthy.
+        const { userBranch, svvNetId, role } = req.body;
 
-        if (!svvNetId) {
-            return res.status(400).json({ 
-                message: "svvNetId is required to access applications" 
+        console.log(`Backend received POST request for Application ID: ${id}`);
+        console.log(`Body parameters - userBranch: ${userBranch}, svvNetId: ${svvNetId}, role: ${role}`);
+
+        if (!svvNetId || !role) { // Ensure role is also present
+            return res.status(400).json({
+                message: "svvNetId and role are required in the request body to access applications"
             });
         }
-
         if (!mongoose.Types.ObjectId.isValid(id)) {
-            return res.status(400).json({ message: "Invalid application ID" });
+            return res.status(400).json({ message: "Invalid application ID format" });
+        }
+
+        const ACCESS_LEVELS = {
+            STUDENT: 'student',
+            VALIDATOR: 'validator',
+            ADMIN: 'admin',
+            PRINCIPAL: 'principal',
+            HOD: 'hod',
+            INSTITUTE_COORDINATOR: 'institute coordinator',
+            DEPARTMENT_COORDINATOR: 'department coordinator' // <-- ADD THIS
+        };
+        // Admin, Validator, and PRINCIPAL now have global view access
+        const ROLES_WITH_GLOBAL_VIEW_ACCESS = [
+            ACCESS_LEVELS.VALIDATOR,
+            ACCESS_LEVELS.ADMIN,
+            ACCESS_LEVELS.PRINCIPAL,
+            ACCESS_LEVELS.INSTITUTE_COORDINATOR,   // ✅ Ensure included
+            ACCESS_LEVELS.HOD,                     // ✅ Ensure included
+            ACCESS_LEVELS.DEPARTMENT_COORDINATOR   // ✅ Add this for global view access
+        ];
+
+        // No roles will have branch-specific view access for this route anymore,
+        // as HOD and Institute Coordinator will now have student-level access for this endpoint.
+        const ROLES_WITH_BRANCH_SPECIFIC_VIEW_ACCESS = [];
+
+        let findFilter = { _id: id };
+        const userRole = role.toLowerCase(); // Standardize role to lowercase once
+
+        console.log(`Backend received request for Application ID: ${id}`);
+        console.log(`User details - userBranch: ${userBranch}, svvNetId: ${svvNetId}, role: ${role}`);
+
+        // Input validation (already present, but good to reiterate its importance)
+        if (!svvNetId || !userRole) {
+            return res.status(400).json({
+                message: "svvNetId and role are required to access applications"
+            });
+        }
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: "Invalid application ID format." });
+        }
+
+        // --- Refined Authorization Logic ---
+        if (
+            ROLES_WITH_GLOBAL_VIEW_ACCESS.includes(userRole) ||
+            userRole === ACCESS_LEVELS.INSTITUTE_COORDINATOR || // institute coordinator = department coordinator
+            userRole === ACCESS_LEVELS.HOD
+        ) {
+            // Grant department coordinator and HOD global view access (view-only)
+            console.log(`Access granted (View Only): Role '${userRole}' can view any application. Filter:`, findFilter);
+            // No need to append svvNetId
+        } else {
+            // Restrict to only their own applications
+            findFilter.svvNetId = svvNetId;
+            console.log(`Access restricted (User-Specific View): User role '${userRole}' requires svvNetId match. Filter:`, findFilter);
         }
 
         const collections = [
@@ -628,34 +778,36 @@ router.get("/:id", async (req, res) => {
             { model: PG2BForm, type: "PG_2_B" },
             { model: R1Form, type: "R1" }
         ];
-
         let application = null;
         let foundType = null;
 
-        // Search for the application and verify ownership
+        // Search for the application using the constructed filter
         for (const collection of collections) {
-            application = await collection.model.findOne({ 
-                _id: id, 
-                svvNetId: svvNetId // Ensure user owns this application
-            }).lean();
-            
+            console.log(`Searching in ${collection.type} with filter:`, findFilter);
+            application = await collection.model.findOne(findFilter).lean();
+
             if (application) {
                 foundType = collection.type;
+                console.log(`Application found in ${collection.type}.`);
                 break;
             }
         }
 
         if (!application) {
-            return res.status(404).json({ 
-                message: "Application not found or you don't have permission to access it" 
+            console.log(`No application found with ID: ${id} and the given credentials across all collections.`);
+            return res.status(404).json({
+                message: "Application not found or you don't have permission to access it"
             });
         }
 
-        const processedApplication = await processFormForDisplay(application, foundType, userBranch);
-
+        // Pass the userRole to processFormForDisplay
+        const processedApplication = await processFormForDisplay(application, foundType, userBranch, gfsBucket, userRole);
         res.json(processedApplication);
     } catch (error) {
-        console.error("Error fetching application by ID:", error);
+        console.error("Error fetching application by ID (POST route):", error);
+        if (error.name === 'CastError' && error.path === '_id') {
+            return res.status(400).json({ message: 'Invalid Application ID format.' });
+        }
         res.status(500).json({ message: "Server error" });
     }
 });
@@ -668,11 +820,14 @@ router.get("/:id", async (req, res) => {
 router.put("/:id/status", async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, svvNetId } = req.body;
+        // IMPORTANT SECURITY NOTE: 'svvNetId' for ownership verification should be
+        // extracted from a securely authenticated user session (e.g., JWT payload),
+        // NOT directly from the request body.
+        const { status, svvNetId } = req.body; // Assuming svvNetId is sent in body for PUT
 
         if (!svvNetId) {
-            return res.status(400).json({ 
-                message: "svvNetId is required" 
+            return res.status(400).json({
+                message: "svvNetId is required"
             });
         }
 
@@ -681,13 +836,13 @@ router.put("/:id/status", async (req, res) => {
         }
 
         if (!status || !['pending', 'approved', 'rejected'].includes(status.toLowerCase())) {
-            return res.status(400).json({ 
-                message: "Valid status is required (pending, approved, rejected)" 
+            return res.status(400).json({
+                message: "Valid status is required (pending, approved, rejected)"
             });
         }
 
         const collections = [
-            UG1Form, UGForm2, UG3AForm, UG3BForm, 
+            UG1Form, UGForm2, UG3AForm, UG3BForm,
             PG1Form, PG2AForm, PG2BForm, R1Form
         ];
 
@@ -696,11 +851,11 @@ router.put("/:id/status", async (req, res) => {
         // Try to update in each collection
         for (const Model of collections) {
             updatedApplication = await Model.findOneAndUpdate(
-                { 
-                    _id: id, 
+                {
+                    _id: id,
                     svvNetId: svvNetId // Ensure user owns this application
                 },
-                { 
+                {
                     status: status.toLowerCase(),
                     updatedAt: new Date()
                 },
@@ -713,14 +868,14 @@ router.put("/:id/status", async (req, res) => {
         }
 
         if (!updatedApplication) {
-            return res.status(404).json({ 
-                message: "Application not found or you don't have permission to update it" 
+            return res.status(404).json({
+                message: "Application not found or you don't have permission to update it"
             });
         }
 
-        res.json({ 
+        res.json({
             message: "Application status updated successfully",
-            application: updatedApplication 
+            application: updatedApplication
         });
     } catch (error) {
         console.error("Error updating application status:", error);
@@ -728,28 +883,102 @@ router.put("/:id/status", async (req, res) => {
     }
 });
 
+router.put("/:id/remarks", async (req, res) => {
+  const { id } = req.params;
+  let { remarks } = req.body;
+
+  // Validation
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid application ID." });
+  }
+
+  if (!remarks || !remarks.trim()) {
+    return res.status(400).json({ message: "Remarks cannot be empty." });
+  }
+
+  remarks = remarks.trim();
+
+  const formCollections = [
+    UG1Form, UGForm2, UG3AForm, UG3BForm,
+    PG1Form, PG2AForm, PG2BForm, R1Form
+  ];
+
+  try {
+    let currentApp = null;
+    let ModelUsed = null;
+
+    // 1. Find the application first to get its current status
+    for (const Model of formCollections) {
+      currentApp = await Model.findById(id).lean();
+      if (currentApp) {
+        ModelUsed = Model; // Store the model that found the application
+        break;
+      }
+    }
+
+    if (!currentApp) {
+      return res.status(404).json({ message: "Application not found." });
+    }
+
+    // Prepare the new status history entry
+    // The status in statusHistory will reflect the application's status
+    // at the time these remarks are being added.
+    const newStatusHistoryEntry = {
+            status: currentApp.status, // Use the current status of the application
+            date: new Date(),
+            remark: remarks, // Use the new remark being added
+            changedBy: changedBy || 'System', // Use changedBy from request, or 'System'
+            changedByRole: changedByRole || 'N/A' // Use changedByRole from request, or 'N/A'
+    };
+    // Debugging: Log the new status history entry before pushing
+    console.log("Backend /:id/remarks - New Status History Entry:", newStatusHistoryEntry);
+    // 2. Update the remarks field and push the new entry to statusHistory
+    const updatedApp = await ModelUsed.findByIdAndUpdate(
+      id,
+      {
+        $set: { remarks: remarks }, // Update the top-level remarks field
+        $push: { statusHistory: newStatusHistoryEntry }, // Push to statusHistory array
+        updatedAt: new Date() // Update the updatedAt timestamp
+      },
+      { new: true } // Return the updated document
+    ).lean();
+
+    return res.status(200).json({
+      message: "Remarks and status history updated successfully.",
+      application: updatedApp
+    });
+  } catch (err) {
+    console.error("❌ Error updating remarks:", err);
+    res.status(500).json({ message: "Server error while updating remarks." });
+  }
+});
+
 // General file serving route for GridFS files
 router.get('/file/:fileId', async (req, res) => {
-    if (!gfsBucket) {
-        return res.status(503).json({ message: "GridFS is not initialized." });
-    }
     try {
-        const fileId = req.params.fileId;
+        const { fileId } = req.params;
+        const bucketName = req.query.bucket || 'uploads'; // Default to 'uploads' if bucket not specified
+
         if (!mongoose.Types.ObjectId.isValid(fileId)) {
             return res.status(400).json({ message: "Invalid file ID." });
         }
 
-        const files = await gfsBucket.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
+        const dynamicBucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, { bucketName });
+
+        console.log(`📦 Serving file from bucket: ${bucketName}`);
+
+        const files = await dynamicBucket.find({ _id: new mongoose.Types.ObjectId(fileId) }).toArray();
+
         if (!files || files.length === 0) {
-            return res.status(404).json({ message: "File not found." });
+            return res.status(404).json({ message: "File not found in the bucket." });
         }
 
         const file = files[0];
 
         res.set('Content-Type', file.contentType);
-        res.set('Content-Disposition', `inline; filename="${file.filename}"`); // 'inline' to display in browser, 'attachment' to download
+        res.set('Content-Disposition', `inline; filename="${file.filename}"`); // Inline to view, attachment to force download
 
-        const downloadStream = gfsBucket.openDownloadStream(file._id);
+        const downloadStream = dynamicBucket.openDownloadStream(file._id);
         downloadStream.pipe(res);
 
         downloadStream.on('error', (err) => {
